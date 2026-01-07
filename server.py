@@ -5,11 +5,13 @@ Handles device connections and video streaming
 import socket
 import binascii
 import threading
+import os
+import sys
 from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD
 from video_streamer import stream_manager
 
 HOST = "0.0.0.0"
-JT808_PORT = 2222
+JT808_PORT = int(os.environ.get('JT808_PORT', 2222))
 
 class DeviceHandler:
     def __init__(self, conn, addr):
@@ -149,7 +151,19 @@ def start_jt808_server():
     """Start JTT 808/1078 server"""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((HOST, JT808_PORT))
+    
+    try:
+        server.bind((HOST, JT808_PORT))
+    except OSError as e:
+        if e.errno == 98:  # Address already in use
+            print(f"[ERROR] Port {JT808_PORT} is already in use!")
+            print(f"[INFO] To find what's using the port, run: sudo netstat -tulnp | grep {JT808_PORT}")
+            print(f"[INFO] Or use a different port: JT808_PORT=2224 python server.py")
+            print(f"[INFO] Or use web_server.py which manages both servers: python web_server.py")
+            sys.exit(1)
+        else:
+            raise
+    
     server.listen(5)
     
     print(f"[*] JTT 808/1078 server listening on {HOST}:{JT808_PORT}")
