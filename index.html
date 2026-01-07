@@ -175,7 +175,7 @@
         
         async function loadStreams() {
             try {
-                const response = await fetch('/api/streams');
+                const response = await fetch('http://82.180.145.220:2223/api/streams');
                 const data = await response.json();
                 streams = data.streams || [];
                 
@@ -265,7 +265,7 @@
             
             async function fetchFrame() {
                 try {
-                    const response = await fetch(`/api/stream/${deviceId}/${channel}`);
+                    const response = await fetch(`http://82.180.145.220:2223/api/stream/${deviceId}/${channel}`);
                     if (response.ok) {
                         const blob = await response.blob();
                         

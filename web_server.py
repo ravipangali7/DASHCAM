@@ -8,7 +8,7 @@ import threading
 from video_streamer import stream_manager
 from server import start_jt808_server
 
-WEB_PORT = 8080
+WEB_PORT = 2223
 
 class StreamingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
