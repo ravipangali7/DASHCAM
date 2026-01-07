@@ -1,0 +1,4 @@
+# No external dependencies required for basic implementation
+# For production, you might want to add:
+# opencv-python>=4.8.0  # For video processing
+# numpy>=1.24.0  # For array operations
