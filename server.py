@@ -7,7 +7,7 @@ import binascii
 import threading
 import os
 import sys
-from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD
+from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD
 from video_streamer import stream_manager
 
 HOST = "0.0.0.0"
@@ -55,6 +55,33 @@ class DeviceHandler:
             response = self.parser.build_auth_response(phone, msg_seq, 0)
             self.conn.send(response)
             print(f"[TX] Authentication response sent")
+        
+        # Handle location data upload (0x0200)
+        elif msg_id == MSG_ID_LOCATION_UPLOAD:
+            location_info = self.parser.parse_location_data(body)
+            if location_info:
+                time_str = (f"{location_info['time']['year']:04d}-"
+                           f"{location_info['time']['month']:02d}-"
+                           f"{location_info['time']['day']:02d} "
+                           f"{location_info['time']['hour']:02d}:"
+                           f"{location_info['time']['minute']:02d}:"
+                           f"{location_info['time']['second']:02d}")
+                
+                print(f"[LOCATION] Device={phone}, "
+                      f"GPS=({location_info['latitude']:.6f}, {location_info['longitude']:.6f}), "
+                      f"Speed={location_info['speed']:.1f} km/h, "
+                      f"Direction={location_info['direction']}°, "
+                      f"Altitude={location_info['altitude']}m, "
+                      f"Time={time_str}, "
+                      f"Alarm=0x{location_info['alarm_flag']:08X}, "
+                      f"Status=0x{location_info['status']:08X}")
+                
+                # Send response
+                response = self.parser.build_location_response(phone, msg_seq, 0)
+                self.conn.send(response)
+                print(f"[TX] Location response sent")
+            else:
+                print(f"[LOCATION] Failed to parse location data from {phone}")
         
         # Handle video upload (0x1205) - JTT 1078
         elif msg_id == MSG_ID_VIDEO_UPLOAD:
