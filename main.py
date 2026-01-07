@@ -98,8 +98,102 @@ class DashcamApplication:
         except Exception as e:
             logger.error(f"Error handling video control: {e}")
     
+    async def handle_registration(self, connection, parsed_message: Dict):
+        """Handle terminal registration (0x0100)"""
+        try:
+            device_id = connection.device_id
+            logger.info(f"Terminal registration from {device_id}")
+            
+            # Parse registration body
+            body = parsed_message['body']
+            if len(body) >= 2:
+                province_id = body[0]
+                city_id = body[1]
+                manufacturer_id = body[2:7] if len(body) >= 7 else b''
+                terminal_model = body[7:27] if len(body) >= 27 else b''
+                terminal_id = body[27:43] if len(body) >= 43 else b''
+                license_plate_color = body[43] if len(body) >= 44 else 0
+                license_plate = body[44:] if len(body) > 44 else b''
+                
+                logger.info(f"Registration details - Province: {province_id}, City: {city_id}, "
+                          f"Manufacturer: {manufacturer_id.hex() if manufacturer_id else 'N/A'}, "
+                          f"Model: {terminal_model.decode('utf-8', errors='ignore') if terminal_model else 'N/A'}")
+            
+            # Send registration response (0x8100)
+            # Response: Result (1 byte: 0=success, 1=vehicle already registered, 2=vehicle not in database, 
+            #                   3=terminal already registered, 4=terminal not in database)
+            # Auth code (16 bytes, only if result=0)
+            result = 0  # Success
+            auth_code = b'1234567890123456'  # 16 bytes auth code
+            
+            response_body = bytes([result]) + auth_code
+            await connection.send_message(
+                MessageType.TERMINAL_REGISTRATION_RESPONSE,
+                response_body,
+                message_serial=parsed_message['header']['message_serial']
+            )
+            logger.info(f"Sent registration response to {device_id} (result: {result})")
+            
+        except Exception as e:
+            logger.error(f"Error handling registration: {e}", exc_info=True)
+    
+    async def handle_authentication(self, connection, parsed_message: Dict):
+        """Handle terminal authentication (0x0102)"""
+        try:
+            device_id = connection.device_id
+            logger.info(f"Terminal authentication from {device_id}")
+            
+            # Parse auth code from body
+            body = parsed_message['body']
+            auth_code = body[:16] if len(body) >= 16 else b''
+            logger.info(f"Auth code received: {auth_code.hex()}")
+            
+            # Send authentication response (0x8001 - same as heartbeat response)
+            response_body = bytes([0x00])  # Success
+            await connection.send_message(
+                MessageType.TERMINAL_HEARTBEAT_RESPONSE,
+                response_body,
+                message_serial=parsed_message['header']['message_serial']
+            )
+            logger.info(f"Sent authentication response to {device_id}")
+            
+        except Exception as e:
+            logger.error(f"Error handling authentication: {e}", exc_info=True)
+    
+    async def handle_heartbeat(self, connection, parsed_message: Dict):
+        """Handle terminal heartbeat (0x0002)"""
+        try:
+            device_id = connection.device_id
+            logger.debug(f"Heartbeat from {device_id}")
+            
+            # Send heartbeat response (0x8001)
+            response_body = bytes([0x00])  # Success
+            await connection.send_message(
+                MessageType.TERMINAL_HEARTBEAT_RESPONSE,
+                response_body,
+                message_serial=parsed_message['header']['message_serial']
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling heartbeat: {e}")
+    
     def setup_handlers(self):
         """Setup message handlers"""
+        # JTT808 Base Protocol Handlers
+        self.device_manager.register_handler(
+            MessageType.TERMINAL_REGISTRATION,
+            self.handle_registration
+        )
+        self.device_manager.register_handler(
+            MessageType.TERMINAL_AUTHENTICATION,
+            self.handle_authentication
+        )
+        self.device_manager.register_handler(
+            MessageType.TERMINAL_HEARTBEAT,
+            self.handle_heartbeat
+        )
+        
+        # JTT1078 Video Protocol Handlers
         # Video upload request
         self.device_manager.register_handler(
             MessageType.REAL_TIME_VIDEO_UPLOAD_REQUEST,

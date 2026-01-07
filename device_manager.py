@@ -38,6 +38,7 @@ class DeviceConnection:
             )
             self.writer.write(message)
             await self.writer.drain()
+            logger.debug(f"Sent message 0x{message_id:04X} to {self.device_id}")
             return True
         except Exception as e:
             logger.error(f"Error sending message to {self.device_id}: {e}")
@@ -87,6 +88,7 @@ class DeviceManager:
                 if not data:
                     break
                 
+                logger.debug(f"Received {len(data)} bytes from {address}: {data.hex()[:100]}")
                 buffer.extend(data)
                 
                 # Try to parse messages from buffer
@@ -109,11 +111,14 @@ class DeviceManager:
                             break  # Wait for more data
                         
                         # Remove processed message from buffer
+                        message_data = buffer[start_idx:end_idx + 1]
                         buffer = buffer[end_idx + 1:]
                         
                         # Process message
                         message_id = parsed['header']['message_id']
                         terminal_phone = parsed['header']['terminal_phone']
+                        
+                        logger.info(f"Received message 0x{message_id:04X} from device {terminal_phone}")
                         
                         # Register device if not already registered
                         if device_id is None:
@@ -122,7 +127,7 @@ class DeviceManager:
                                 device_id, reader, writer, address
                             )
                             self.devices[device_id] = connection
-                            logger.info(f"Device registered: {device_id}")
+                            logger.info(f"Device registered: {device_id} from {address}")
                         
                         # Call registered handler
                         if message_id in self.message_handlers:
@@ -131,17 +136,20 @@ class DeviceManager:
                                     connection, parsed
                                 )
                             except Exception as e:
-                                logger.error(f"Error handling message {message_id}: {e}")
+                                logger.error(f"Error handling message 0x{message_id:04X}: {e}", exc_info=True)
+                        else:
+                            logger.warning(f"No handler registered for message type 0x{message_id:04X}")
                     else:
                         # No complete message found, check if we have start flag
                         if 0x7E not in buffer:
+                            logger.warning(f"Invalid data received, clearing buffer: {buffer.hex()[:100]}")
                             buffer.clear()
                         break
         
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error(f"Error in TCP connection handler: {e}")
+            logger.error(f"Error in TCP connection handler: {e}", exc_info=True)
         finally:
             if device_id and device_id in self.devices:
                 del self.devices[device_id]
@@ -159,6 +167,8 @@ class DeviceManager:
             if parsed:
                 message_id = parsed['header']['message_id']
                 terminal_phone = parsed['header']['terminal_phone']
+                
+                logger.info(f"Received UDP message 0x{message_id:04X} from device {terminal_phone} at {addr}")
                 
                 # For UDP, create a temporary connection object
                 # In real implementation, you might want to maintain UDP connections differently

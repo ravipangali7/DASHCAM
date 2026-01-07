@@ -24,7 +24,7 @@ PROTOCOL_VERSION = 0x01
 MESSAGE_TIMEOUT = 30  # seconds
 
 # Logging Configuration
-LOG_LEVEL = 'INFO'
+LOG_LEVEL = 'DEBUG'  # Changed to DEBUG to see all connection and message details
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
 # Device Settings
