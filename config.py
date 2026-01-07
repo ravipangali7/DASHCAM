@@ -4,15 +4,15 @@ Configuration settings for the JTT1078 dashcam streaming application.
 
 # Network Configuration
 DEVICE_TCP_HOST = '0.0.0.0'
-DEVICE_TCP_PORT = 1078
+DEVICE_TCP_PORT = 2222
 DEVICE_UDP_HOST = '0.0.0.0'
-DEVICE_UDP_PORT = 1079
+DEVICE_UDP_PORT = 2221
 
 # Web Server Configuration
 HTTP_HOST = '0.0.0.0'
-HTTP_PORT = 8080
+HTTP_PORT = 2223
 WEBSOCKET_HOST = '0.0.0.0'
-WEBSOCKET_PORT = 8081
+WEBSOCKET_PORT = 2224
 
 # Video Settings
 VIDEO_JPEG_QUALITY = 85
