@@ -7,7 +7,7 @@ import binascii
 import threading
 import os
 import sys
-from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT
+from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT, MSG_ID_VIDEO_REALTIME_REQUEST
 from video_streamer import stream_manager
 
 HOST = "0.0.0.0"
@@ -73,6 +73,36 @@ class DeviceHandler:
             response = self.parser.build_auth_response(phone, msg_seq, 0)
             self.conn.send(response)
             print(f"[TX] Authentication response sent")
+            
+            # Automatically request video streaming after authentication
+            try:
+                # Get server IP from connection (use local address)
+                server_ip = self.conn.getsockname()[0]
+                # If bound to 0.0.0.0, try to get the actual IP the device can reach
+                # For now, use the connection's local IP or default to a configurable value
+                if server_ip == '0.0.0.0':
+                    # Try to get the IP from the connection's peer address perspective
+                    # Or use environment variable, or default to localhost
+                    server_ip = os.environ.get('VIDEO_SERVER_IP', '127.0.0.1')
+                
+                # Use same port as JT808 for video (or separate port if configured)
+                video_port = int(os.environ.get('VIDEO_PORT', JT808_PORT))
+                
+                # Request video streaming: channel 1, video only, main stream
+                video_request = self.parser.build_video_realtime_request(
+                    phone=phone,
+                    msg_seq=msg_seq + 1,  # Next sequence number
+                    server_ip=server_ip,
+                    tcp_port=video_port,
+                    udp_port=video_port,
+                    channel=1,  # First camera channel
+                    data_type=1,  # Video only
+                    stream_type=0  # Main stream
+                )
+                self.conn.send(video_request)
+                print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, Channel=1")
+            except Exception as e:
+                print(f"[ERROR] Failed to send video request: {e}")
         
         # Handle location data upload (0x0200)
         elif msg_id == MSG_ID_LOCATION_UPLOAD:

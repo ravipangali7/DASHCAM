@@ -19,6 +19,7 @@ MSG_ID_LOCATION_RESPONSE = 0x8003
 MSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)
 
 # JTT 1078 Video Message IDs
+MSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request
 MSG_ID_VIDEO_UPLOAD = 0x1205
 MSG_ID_VIDEO_UPLOAD_INIT = 0x1206
 MSG_ID_VIDEO_DATA = 0x9201
@@ -245,6 +246,39 @@ class JT808Parser:
         """Build terminal logout response (0x8001)"""
         body = struct.pack('>B', result_code)  # Result code (0=success)
         return self.build_response(MSG_ID_LOGOUT_RESPONSE, phone, msg_seq, body)
+    
+    def build_video_realtime_request(self, phone, msg_seq, server_ip, tcp_port, udp_port, 
+                                     channel=1, data_type=1, stream_type=0):
+        """
+        Build real-time audio and video transmission request (0x9101)
+        
+        Args:
+            phone: Device phone number
+            msg_seq: Message sequence number
+            server_ip: Server IP address (string, e.g., "192.168.1.100")
+            tcp_port: TCP port for video channel (int)
+            udp_port: UDP port for video channel (int)
+            channel: Logical channel number (1 byte, default=1)
+            data_type: Data type (1 byte): 0=AV, 1=Video only, 2=Audio only (default=1)
+            stream_type: Stream type (1 byte): 0=Main stream, 1=Sub stream (default=0)
+        """
+        # Parse IP address to bytes
+        ip_parts = server_ip.split('.')
+        if len(ip_parts) != 4:
+            raise ValueError(f"Invalid IPv4 address: {server_ip}")
+        ip_bytes = bytes([int(part) for part in ip_parts])
+        ip_length = len(ip_bytes)
+        
+        # Build message body
+        body = struct.pack('>B', ip_length)  # IP address length
+        body += ip_bytes  # IP address
+        body += struct.pack('>H', tcp_port)  # TCP port
+        body += struct.pack('>H', udp_port)  # UDP port
+        body += struct.pack('>B', channel)  # Logical channel number
+        body += struct.pack('>B', data_type)  # Data type
+        body += struct.pack('>B', stream_type)  # Stream type
+        
+        return self.build_response(MSG_ID_VIDEO_REALTIME_REQUEST, phone, msg_seq, body)
     
     def parse_video_data(self, body):
         """Parse JTT 1078 video data message"""
