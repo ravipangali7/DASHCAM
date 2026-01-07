@@ -16,6 +16,15 @@ from websockets.server import serve
 logger = logging.getLogger(__name__)
 
 
+def add_cors_headers(response: web.Response) -> web.Response:
+    """Add CORS headers to response"""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    return response
+
+
 class StreamServer:
     """WebSocket and HTTP server for video streaming"""
     
@@ -127,6 +136,11 @@ class StreamServer:
     
     async def http_handler(self, request: web.Request):
         """Handle HTTP requests"""
+        # Handle OPTIONS preflight requests
+        if request.method == 'OPTIONS':
+            response = web.Response()
+            return add_cors_headers(response)
+        
         path = request.path
         
         if path == '/' or path == '/index.html':
@@ -134,9 +148,11 @@ class StreamServer:
             try:
                 with open('index.html', 'r', encoding='utf-8') as f:
                     content = f.read()
-                return web.Response(text=content, content_type='text/html')
+                response = web.Response(text=content, content_type='text/html')
+                return add_cors_headers(response)
             except FileNotFoundError:
-                return web.Response(text="index.html not found", status=404)
+                response = web.Response(text="index.html not found", status=404)
+                return add_cors_headers(response)
         
         elif path == '/api/streams':
             # API endpoint to get available streams
@@ -148,34 +164,42 @@ class StreamServer:
                 }
                 for key in self.frame_buffers.keys()
             ]
-            return web.json_response({'streams': streams})
+            response = web.json_response({'streams': streams})
+            return add_cors_headers(response)
         
         elif path.startswith('/api/frame/'):
             # API endpoint to get latest frame
             stream_key = path.replace('/api/frame/', '')
             if stream_key in self.frame_buffers:
                 jpeg_data = self.frame_buffers[stream_key]
-                return web.Response(
+                response = web.Response(
                     body=jpeg_data,
                     content_type='image/jpeg'
                 )
-            return web.Response(text="Stream not found", status=404)
+                return add_cors_headers(response)
+            response = web.Response(text="Stream not found", status=404)
+            return add_cors_headers(response)
         
         elif path == '/api/status':
             # API endpoint for server status
-            return web.json_response({
+            response = web.json_response({
                 'status': 'running',
                 'clients': len(self.clients),
                 'streams': len(self.frame_buffers)
             })
+            return add_cors_headers(response)
         
         else:
-            return web.Response(text="Not found", status=404)
+            response = web.Response(text="Not found", status=404)
+            return add_cors_headers(response)
     
     async def start_http_server(self):
         """Start HTTP server"""
         self.app = web.Application()
+        # Add OPTIONS handler for all routes
+        self.app.router.add_options('/{path:.*}', self.http_handler)
         self.app.router.add_get('/{path:.*}', self.http_handler)
+        self.app.router.add_post('/{path:.*}', self.http_handler)
         
         runner = web.AppRunner(self.app)
         await runner.setup()

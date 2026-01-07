@@ -307,7 +307,7 @@
         }
 
         function connect() {
-            const wsUrl = `ws://${window.location.hostname}:8081`;
+            const wsUrl = `ws://82.180.145.220:2224`;
             
             try {
                 ws = new WebSocket(wsUrl);
@@ -393,7 +393,7 @@
         }
 
         function loadAvailableStreams() {
-            fetch('/api/streams')
+            fetch('http://82.180.145.220:2223/api/streams')
                 .then(response => response.json())
                 .then(data => {
                     updateDeviceList(data.streams || []);
