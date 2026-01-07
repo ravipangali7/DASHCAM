@@ -7,7 +7,7 @@ import binascii
 import threading
 import os
 import sys
-from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD
+from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT
 from video_streamer import stream_manager
 
 HOST = "0.0.0.0"
@@ -31,8 +31,26 @@ class DeviceHandler:
         
         print(f"[MSG] ID=0x{msg_id:04X}, Phone={phone}, Seq={msg_seq}")
         
+        # Handle terminal general response (0x0001)
+        if msg_id == MSG_ID_TERMINAL_RESPONSE:
+            response_info = self.parser.parse_terminal_response(body)
+            if response_info:
+                print(f"[RESPONSE] Device={phone} acknowledged message ID=0x{response_info['reply_id']:04X}, "
+                      f"Serial={response_info['reply_serial']}, Result={response_info['result_text']}")
+            else:
+                print(f"[RESPONSE] Failed to parse terminal response from {phone}")
+            # No response needed - this IS a response message
+        
+        # Handle terminal logout (0x0003)
+        elif msg_id == MSG_ID_TERMINAL_LOGOUT:
+            print(f"[LOGOUT] Device {phone} is logging out")
+            # Send logout response
+            response = self.parser.build_logout_response(phone, msg_seq, 0)
+            self.conn.send(response)
+            print(f"[TX] Logout response sent")
+        
         # Handle registration (0x0100)
-        if msg_id == MSG_ID_REGISTER:
+        elif msg_id == MSG_ID_REGISTER:
             print(f"[+] Device registration from {phone}")
             self.device_id = phone
             response = self.parser.build_register_response(phone, msg_seq, 0)

@@ -6,6 +6,8 @@ import struct
 import binascii
 
 # JTT 808 Message IDs
+MSG_ID_TERMINAL_RESPONSE = 0x0001
+MSG_ID_TERMINAL_LOGOUT = 0x0003
 MSG_ID_REGISTER = 0x0100
 MSG_ID_REGISTER_RESPONSE = 0x8100
 MSG_ID_HEARTBEAT = 0x0002
@@ -14,6 +16,7 @@ MSG_ID_TERMINAL_AUTH = 0x0102
 MSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001
 MSG_ID_LOCATION_UPLOAD = 0x0200
 MSG_ID_LOCATION_RESPONSE = 0x8003
+MSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)
 
 # JTT 1078 Video Message IDs
 MSG_ID_VIDEO_UPLOAD = 0x1205
@@ -208,10 +211,40 @@ class JT808Parser:
             'additional_info': additional_info
         }
     
+    def parse_terminal_response(self, body):
+        """Parse terminal general response message (0x0001)"""
+        if len(body) < 5:  # Minimum size: 2+2+1 = 5 bytes
+            return None
+        
+        # Parse terminal response message (0x0001)
+        reply_serial = struct.unpack('>H', body[0:2])[0]
+        reply_id = struct.unpack('>H', body[2:4])[0]
+        result = struct.unpack('>B', body[4:5])[0]
+        
+        # Result code meanings
+        result_meanings = {
+            0: "Success/Confirmation",
+            1: "Failure",
+            2: "Message Error",
+            3: "Not Supported"
+        }
+        
+        return {
+            'reply_serial': reply_serial,
+            'reply_id': reply_id,
+            'result': result,
+            'result_text': result_meanings.get(result, f"Unknown ({result})")
+        }
+    
     def build_location_response(self, phone, msg_seq, result_code=0):
         """Build location data upload response (0x8003)"""
         body = struct.pack('>B', result_code)  # Result code (0=success)
         return self.build_response(MSG_ID_LOCATION_RESPONSE, phone, msg_seq, body)
+    
+    def build_logout_response(self, phone, msg_seq, result_code=0):
+        """Build terminal logout response (0x8001)"""
+        body = struct.pack('>B', result_code)  # Result code (0=success)
+        return self.build_response(MSG_ID_LOGOUT_RESPONSE, phone, msg_seq, body)
     
     def parse_video_data(self, body):
         """Parse JTT 1078 video data message"""
