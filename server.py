@@ -70,6 +70,7 @@ class DeviceHandler:
         self._video_list_query_cooldown = 30.0  # Cooldown in seconds between queries
         self._location_message_count = 0  # Count location messages received
         self._video_list_query_in_progress = False  # Track if query is currently in progress
+        self._timeout_check_thread = None  # Background thread for timeout checking
         
     def handle_message(self, msg, raw_message=None):
         """Handle parsed JTT 808/1078 messages"""
@@ -506,6 +507,9 @@ class DeviceHandler:
                             self.video_list_received_time = time.time()
                             self._video_list_query_in_progress = True
                             
+                            # Start background timeout checker if not already running
+                            self._start_timeout_checker()
+                            
                             print(f"[VIDEO LIST BUFFER] Buffer initialized: count={new_count}, expected_size={self.video_list_expected_size} bytes")
                             print(f"[VIDEO LIST BUFFER] Waiting for {self.video_list_expected_size - 2} more bytes in subsequent messages...")
                             
@@ -580,6 +584,7 @@ class DeviceHandler:
                         self.video_list_expected_size = None
                         self.video_list_received_time = None
                         self._video_list_query_in_progress = False
+                        self._stop_timeout_checker()
                         return
                     else:
                         print(f"[VIDEO LIST BUFFER] Parsing failed even with complete buffer")
@@ -590,6 +595,7 @@ class DeviceHandler:
                         self.video_list_expected_size = None
                         self.video_list_received_time = None
                         self._video_list_query_in_progress = False
+                        self._stop_timeout_checker()
                 else:
                     # Still waiting for more data
                     remaining = self.video_list_expected_size - len(self.video_list_buffer)
@@ -614,6 +620,9 @@ class DeviceHandler:
                         self.video_list_expected_size = 2 + (video_count * 18)
                         self.video_list_received_time = time.time()
                         self._video_list_query_in_progress = True
+                        
+                        # Start background timeout checker
+                        self._start_timeout_checker()
                         
                         print(f"[VIDEO LIST BUFFER] Buffer initialized: count={video_count}, expected_size={self.video_list_expected_size} bytes")
                         print(f"[VIDEO LIST BUFFER] Waiting for {self.video_list_expected_size - 2} more bytes in subsequent messages...")
@@ -981,42 +990,51 @@ class DeviceHandler:
             if self._video_list_query_in_progress:
                 # Check if buffer has timed out
                 buffer_timed_out = False
-                if self.video_list_received_time is not None:
+                # Check timeout: if received_time is None or elapsed > timeout, consider it timed out
+                if self.video_list_received_time is None:
+                    # No timestamp means buffer was reset, consider it timed out
+                    buffer_timed_out = True
+                    print(f"[VIDEO LIST QUERY] Previous query has no timestamp, resetting and allowing new query")
+                else:
                     elapsed = time.time() - self.video_list_received_time
                     # #region agent log
                     try:
                         with open(r'c:\Mine\Projects\DASHCAM\.cursor\debug.log', 'a') as f:
-                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:953","message":"Checking timeout in query_video_list","data":{"elapsed":elapsed,"timeout":self.video_list_buffer_timeout,"timed_out":elapsed > self.video_list_buffer_timeout},"timestamp":int(time.time()*1000)}) + '\n')
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:985","message":"Checking timeout in query_video_list","data":{"elapsed":elapsed,"timeout":self.video_list_buffer_timeout,"timed_out":elapsed > self.video_list_buffer_timeout},"timestamp":int(time.time()*1000)}) + '\n')
                     except: pass
                     # #endregion
                     if elapsed > self.video_list_buffer_timeout:
                         buffer_timed_out = True
                         print(f"[VIDEO LIST QUERY] Previous query timed out ({elapsed:.1f}s), resetting and allowing new query")
-                        # #region agent log
-                        try:
-                            with open(r'c:\Mine\Projects\DASHCAM\.cursor\debug.log', 'a') as f:
-                                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:994","message":"Timeout detected - resetting buffer state","data":{"before_reset":{"query_in_progress":self._video_list_query_in_progress,"buffer_count":self.video_list_count}},"timestamp":int(time.time()*1000)}) + '\n')
-                        except: pass
-                        # #endregion
-                        # Reset buffer state when timeout detected
-                        self.video_list_buffer = bytearray()
-                        self.video_list_count = None
-                        self.video_list_expected_size = None
-                        self.video_list_received_time = None
-                        self._video_list_query_in_progress = False
-                        # #region agent log
-                        try:
-                            with open(r'c:\Mine\Projects\DASHCAM\.cursor\debug.log', 'a') as f:
-                                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:1003","message":"Buffer reset complete after timeout","data":{"after_reset":{"query_in_progress":self._video_list_query_in_progress}},"timestamp":int(time.time()*1000)}) + '\n')
-                        except: pass
-                        # #endregion
                 
-                if not buffer_timed_out:
-                    print(f"[VIDEO LIST QUERY] Query already in progress, skipping duplicate query")
+                if buffer_timed_out:
+                    # Reset buffer state when timeout detected
                     # #region agent log
                     try:
                         with open(r'c:\Mine\Projects\DASHCAM\.cursor\debug.log', 'a') as f:
-                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:960","message":"Query blocked - still in progress","data":{"elapsed":elapsed if self.video_list_received_time else None},"timestamp":int(time.time()*1000)}) + '\n')
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:1000","message":"Timeout detected - resetting buffer state","data":{"before_reset":{"query_in_progress":self._video_list_query_in_progress,"buffer_count":self.video_list_count,"received_time":self.video_list_received_time}},"timestamp":int(time.time()*1000)}) + '\n')
+                    except: pass
+                    # #endregion
+                    self.video_list_buffer = bytearray()
+                    self.video_list_count = None
+                    self.video_list_expected_size = None
+                    self.video_list_received_time = None
+                    self._video_list_query_in_progress = False
+                    # #region agent log
+                    try:
+                        with open(r'c:\Mine\Projects\DASHCAM\.cursor\debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:1008","message":"Buffer reset complete after timeout","data":{"after_reset":{"query_in_progress":self._video_list_query_in_progress}},"timestamp":int(time.time()*1000)}) + '\n')
+                    except: pass
+                    # #endregion
+                    # Stop timeout checker since buffer is cleared
+                    self._stop_timeout_checker()
+                else:
+                    print(f"[VIDEO LIST QUERY] Query already in progress, skipping duplicate query")
+                    # #region agent log
+                    try:
+                        elapsed = time.time() - self.video_list_received_time if self.video_list_received_time else None
+                        with open(r'c:\Mine\Projects\DASHCAM\.cursor\debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"server.py:1012","message":"Query blocked - still in progress","data":{"elapsed":elapsed,"timeout":self.video_list_buffer_timeout},"timestamp":int(time.time()*1000)}) + '\n')
                     except: pass
                     # #endregion
                     return False
@@ -1078,6 +1096,36 @@ class DeviceHandler:
             import traceback
             traceback.print_exc()
             return False
+    
+    def _start_timeout_checker(self):
+        """Start background thread to check for buffer timeouts"""
+        if self._timeout_check_thread is not None and self._timeout_check_thread.is_alive():
+            return  # Already running
+        
+        def check_timeout():
+            while self._video_list_query_in_progress and self.video_list_received_time is not None:
+                time.sleep(2)  # Check every 2 seconds
+                if not self._video_list_query_in_progress:
+                    break
+                if self.video_list_received_time is None:
+                    break
+                elapsed = time.time() - self.video_list_received_time
+                if elapsed > self.video_list_buffer_timeout:
+                    print(f"[VIDEO LIST TIMEOUT] Proactive timeout detected ({elapsed:.1f}s), resetting buffer")
+                    # Reset buffer state
+                    self.video_list_buffer = bytearray()
+                    self.video_list_count = None
+                    self.video_list_expected_size = None
+                    self.video_list_received_time = None
+                    self._video_list_query_in_progress = False
+                    break
+        
+        self._timeout_check_thread = threading.Thread(target=check_timeout, daemon=True)
+        self._timeout_check_thread.start()
+    
+    def _stop_timeout_checker(self):
+        """Stop the timeout checker thread"""
+        self._timeout_check_thread = None
     
     def request_video_download(self, phone, msg_seq, video_info):
         """
