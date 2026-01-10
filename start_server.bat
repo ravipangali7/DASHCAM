@@ -26,18 +26,20 @@ echo.
 echo ============================================================
 echo.
 
-REM Check if start_video_server.py exists
-if not exist "start_video_server.py" (
-    echo [WARNING] start_video_server.py not found, trying web_server.py...
-    if not exist "web_server.py" (
-        echo [ERROR] Neither start_video_server.py nor web_server.py found!
+REM Check if web_server.py exists (preferred - has full device API)
+if exist "web_server.py" (
+    python web_server.py
+) else (
+    if exist "start_video_server.py" (
+        echo [WARNING] Using start_video_server.py (limited functionality - no device API)
+        echo [WARNING] For full features including device API, use web_server.py
+        python start_video_server.py
+    ) else (
+        echo [ERROR] Neither web_server.py nor start_video_server.py found!
         echo Please make sure you're running this from the project directory.
         pause
         exit /b 1
     )
-    python web_server.py
-) else (
-    python start_video_server.py
 )
 
 REM If we get here, the server stopped

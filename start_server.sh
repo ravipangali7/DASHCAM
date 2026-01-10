@@ -31,14 +31,15 @@ echo ""
 echo "============================================================"
 echo ""
 
-# Check if start_video_server.py exists
-if [ -f "start_video_server.py" ]; then
-    $PYTHON_CMD start_video_server.py
-elif [ -f "web_server.py" ]; then
-    echo "[WARNING] Using web_server.py instead of start_video_server.py"
+# Check if web_server.py exists (preferred - has full device API)
+if [ -f "web_server.py" ]; then
     $PYTHON_CMD web_server.py
+elif [ -f "start_video_server.py" ]; then
+    echo "[WARNING] Using start_video_server.py (limited functionality - no device API)"
+    echo "[WARNING] For full features including device API, use web_server.py"
+    $PYTHON_CMD start_video_server.py
 else
-    echo "[ERROR] Neither start_video_server.py nor web_server.py found!"
+    echo "[ERROR] Neither web_server.py nor start_video_server.py found!"
     echo "Please make sure you're running this from the project directory."
     exit 1
 fi
