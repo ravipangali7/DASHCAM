@@ -148,8 +148,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
         """API endpoint to list connected devices"""
         print(f"[API] list_devices() called")
         try:
-            if not connection_lock or not device_connections:
-                print(f"[API] connection_lock or device_connections not available")
+            if connection_lock is None or device_connections is None:
+                print(f"[API] connection_lock or device_connections not available (connection_lock={connection_lock}, device_connections={device_connections})")
                 response = json.dumps({'devices': []})
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')

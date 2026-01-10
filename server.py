@@ -365,6 +365,7 @@ class DeviceHandler:
                 
                 # Increment location message count
                 self._location_message_count += 1
+                print(f"[LOCATION] Location message count: {self._location_message_count}")
                 
                 # Query video list if device is active but list not received
                 # This works even without authentication (some devices don't authenticate)
@@ -373,6 +374,8 @@ class DeviceHandler:
                     not self.video_list_received and  # Haven't received video list yet
                     self.conn  # Connection is still active
                 )
+                
+                print(f"[AUTO QUERY] Checking conditions: device_id={self.device_id}, video_list_received={self.video_list_received}, conn={bool(self.conn)}, can_query={can_query}")
                 
                 # Check cooldown
                 query_allowed = True
@@ -399,6 +402,13 @@ class DeviceHandler:
                                 print(f"[AUTO QUERY] Connection lost, skipping query")
                         
                         threading.Thread(target=query_after_delay, daemon=True).start()
+                    else:
+                        print(f"[AUTO QUERY] Waiting for more location messages ({self._location_message_count}/2)")
+                else:
+                    if not can_query:
+                        print(f"[AUTO QUERY] Cannot query: device_id={self.device_id}, video_list_received={self.video_list_received}, conn={bool(self.conn)}")
+                    if not query_allowed:
+                        print(f"[AUTO QUERY] Query not allowed due to cooldown")
                 
                 # Try sending video request after location data (some devices need this)
                 if not self.video_request_sent and self.authenticated:
