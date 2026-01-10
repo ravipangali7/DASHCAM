@@ -7,7 +7,7 @@ import binascii
 import threading
 import os
 import sys
-from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT, MSG_ID_VIDEO_REALTIME_REQUEST
+from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT, MSG_ID_VIDEO_REALTIME_REQUEST, MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL
 from video_streamer import stream_manager
 
 HOST = "0.0.0.0"
@@ -20,6 +20,7 @@ class DeviceHandler:
         self.parser = JT808Parser()
         self.device_id = None
         self.authenticated = False
+        self.video_request_sent = False  # Track if video request already sent
         self.buffer = bytearray()
         
     def handle_message(self, msg):
@@ -69,40 +70,42 @@ class DeviceHandler:
             # Extract authentication code from body
             auth_code = body[:8] if len(body) >= 8 else b''
             # For demo, accept all authentications
+            was_authenticated = self.authenticated
             self.authenticated = True
             response = self.parser.build_auth_response(phone, msg_seq, 0)
             self.conn.send(response)
             print(f"[TX] Authentication response sent")
             
-            # Automatically request video streaming after authentication
-            try:
-                # Get server IP from connection (use local address)
-                server_ip = self.conn.getsockname()[0]
-                # If bound to 0.0.0.0, try to get the actual IP the device can reach
-                # For now, use the connection's local IP or default to a configurable value
-                if server_ip == '0.0.0.0':
-                    # Try to get the IP from the connection's peer address perspective
-                    # Or use environment variable, or default to localhost
-                    server_ip = os.environ.get('VIDEO_SERVER_IP', '127.0.0.1')
-                
-                # Use same port as JT808 for video (or separate port if configured)
-                video_port = int(os.environ.get('VIDEO_PORT', JT808_PORT))
-                
-                # Request video streaming: channel 1, video only, main stream
-                video_request = self.parser.build_video_realtime_request(
-                    phone=phone,
-                    msg_seq=msg_seq + 1,  # Next sequence number
-                    server_ip=server_ip,
-                    tcp_port=video_port,
-                    udp_port=video_port,
-                    channel=1,  # First camera channel
-                    data_type=1,  # Video only
-                    stream_type=0  # Main stream
-                )
-                self.conn.send(video_request)
-                print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, Channel=1")
-            except Exception as e:
-                print(f"[ERROR] Failed to send video request: {e}")
+            # Only send video request ONCE after first successful authentication
+            if not was_authenticated and not self.video_request_sent:
+                try:
+                    # Get server IP from connection (use local address)
+                    server_ip = self.conn.getsockname()[0]
+                    # If bound to 0.0.0.0, try to get the actual IP the device can reach
+                    if server_ip == '0.0.0.0':
+                        server_ip = os.environ.get('VIDEO_SERVER_IP', '82.180.145.220')
+                    
+                    # Use same port as JT808 for video (or separate port if configured)
+                    video_port = int(os.environ.get('VIDEO_PORT', JT808_PORT))
+                    
+                    # Request video streaming: channel 1, video only, main stream
+                    video_request = self.parser.build_video_realtime_request(
+                        phone=phone,
+                        msg_seq=msg_seq + 1,  # Next sequence number
+                        server_ip=server_ip,
+                        tcp_port=video_port,
+                        udp_port=video_port,
+                        channel=1,  # First camera channel
+                        data_type=1,  # Video only
+                        stream_type=0  # Main stream
+                    )
+                    self.conn.send(video_request)
+                    self.video_request_sent = True
+                    print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, Channel=1")
+                except Exception as e:
+                    print(f"[ERROR] Failed to send video request: {e}")
+            elif was_authenticated:
+                print(f"[INFO] Device {phone} re-authenticated (video request already sent)")
         
         # Handle location data upload (0x0200)
         elif msg_id == MSG_ID_LOCATION_UPLOAD:
@@ -131,9 +134,9 @@ class DeviceHandler:
             else:
                 print(f"[LOCATION] Failed to parse location data from {phone}")
         
-        # Handle video upload (0x1205) - JTT 1078
+        # Handle video upload (0x1205) - JTT 1078 (stored video)
         elif msg_id == MSG_ID_VIDEO_UPLOAD:
-            print(f"[VIDEO] Video data received from {phone}")
+            print(f"[VIDEO] Video data received from {phone} (0x1205)")
             video_info = self.parser.parse_video_data(body)
             if video_info:
                 channel = video_info['logic_channel']
@@ -155,8 +158,71 @@ class DeviceHandler:
                 print(f"[VIDEO] Channel={channel}, Size={len(video_data)} bytes, "
                       f"GPS=({video_info['latitude']:.6f}, {video_info['longitude']:.6f})")
         
+        # Handle real-time video data (0x9201, 0x9202, 0x9206, 0x9207) - JTT 1078
+        elif msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, 0x9206, 0x9207]:
+            print(f"[VIDEO] Real-time video data received from {phone} (0x{msg_id:04X})")
+            video_info = self.parse_realtime_video_data(body, msg_id)
+            if video_info:
+                channel = video_info['logic_channel']
+                video_data = video_info['video_data']
+                
+                # Add frame to stream manager
+                stream_manager.add_frame(
+                    phone,
+                    channel,
+                    video_data,
+                    {
+                        'latitude': video_info.get('latitude', 0.0),
+                        'longitude': video_info.get('longitude', 0.0),
+                        'speed': video_info.get('speed', 0.0),
+                        'direction': video_info.get('direction', 0)
+                    }
+                )
+                
+                print(f"[VIDEO] Channel={channel}, DataType={video_info.get('data_type', 'N/A')}, "
+                      f"PackageType={video_info.get('package_type', 'N/A')}, Size={len(video_data)} bytes")
+        
         else:
             print(f"[?] Unknown message ID: 0x{msg_id:04X}")
+    
+    def parse_realtime_video_data(self, body, msg_id):
+        """Parse real-time video data packets (0x9201, 0x9202, 0x9206, 0x9207)"""
+        import struct
+        try:
+            if len(body) < 15:
+                return None
+            
+            # Parse real-time video packet format
+            logic_channel = body[0]
+            data_type = body[1]  # 0=I-frame, 1=P-frame, 2=B-frame, 3=Audio
+            package_type = body[2]  # 0=start, 1=continuation, 2=end
+            
+            # Parse timestamp (BCD format, 8 bytes: YYMMDDHHmmss)
+            timestamp_bytes = body[3:11]
+            timestamp_str = ''.join([f'{b >> 4}{b & 0x0F}' for b in timestamp_bytes])
+            
+            # Last frame interval (2 bytes)
+            last_frame_interval = struct.unpack('>H', body[11:13])[0] if len(body) >= 13 else 0
+            
+            # Last frame size (2 bytes)
+            last_frame_size = struct.unpack('>H', body[13:15])[0] if len(body) >= 15 else 0
+            
+            # Video data starts at byte 15
+            video_data = body[15:] if len(body) > 15 else b''
+            
+            return {
+                'logic_channel': logic_channel,
+                'data_type': data_type,
+                'package_type': package_type,
+                'timestamp': timestamp_str,
+                'last_frame_interval': last_frame_interval,
+                'last_frame_size': last_frame_size,
+                'video_data': video_data,
+                'message_id': msg_id
+            }
+        except Exception as e:
+            print(f"[ERROR] Failed to parse real-time video data: {e}")
+            return None
     
     def run(self):
         """Main handler loop"""
@@ -222,6 +288,68 @@ class DeviceHandler:
         self.conn.close()
         print(f"[-] Connection closed for {self.addr}")
 
+def handle_udp_video_packet(data, addr):
+    """Handle UDP video packets"""
+    try:
+        parser = JT808Parser()
+        msg = parser.parse_message(data)
+        if msg:
+            msg_id = msg['msg_id']
+            phone = msg.get('phone', 'Unknown')
+            
+            # Handle real-time video data on UDP
+            if msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, 0x9206, 0x9207]:
+                print(f"[UDP VIDEO] Real-time video data from {phone} at {addr} (0x{msg_id:04X})")
+                
+                # Create a temporary handler to parse video data
+                handler = DeviceHandler(None, addr)
+                video_info = handler.parse_realtime_video_data(msg['body'], msg_id)
+                
+                if video_info:
+                    channel = video_info['logic_channel']
+                    video_data = video_info['video_data']
+                    
+                    # Add frame to stream manager
+                    stream_manager.add_frame(
+                        phone,
+                        channel,
+                        video_data,
+                        {
+                            'latitude': video_info.get('latitude', 0.0),
+                            'longitude': video_info.get('longitude', 0.0),
+                            'speed': video_info.get('speed', 0.0),
+                            'direction': video_info.get('direction', 0)
+                        }
+                    )
+                    
+                    print(f"[UDP VIDEO] Channel={channel}, Size={len(video_data)} bytes")
+            else:
+                print(f"[UDP] Message ID=0x{msg_id:04X} from {addr}")
+    except Exception as e:
+        print(f"[ERROR] Error handling UDP packet: {e}")
+
+def start_udp_server():
+    """Start UDP server for video packets"""
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        udp_socket.bind((HOST, JT808_PORT))
+        print(f"[*] UDP server listening on {HOST}:{JT808_PORT} for video packets")
+    except OSError as e:
+        if e.errno == 98:
+            print(f"[WARNING] UDP port {JT808_PORT} already in use, skipping UDP server")
+            return
+        else:
+            raise
+    
+    while True:
+        try:
+            data, addr = udp_socket.recvfrom(4096)
+            handle_udp_video_packet(data, addr)
+        except Exception as e:
+            print(f"[ERROR] UDP server error: {e}")
+
 def start_jt808_server():
     """Start JTT 808/1078 server"""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -241,7 +369,11 @@ def start_jt808_server():
     
     server.listen(5)
     
-    print(f"[*] JTT 808/1078 server listening on {HOST}:{JT808_PORT}")
+    print(f"[*] JTT 808/1078 TCP server listening on {HOST}:{JT808_PORT}")
+    
+    # Start UDP server in background thread
+    udp_thread = threading.Thread(target=start_udp_server, daemon=True)
+    udp_thread.start()
     
     while True:
         conn, addr = server.accept()
