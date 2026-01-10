@@ -76,10 +76,14 @@ class StreamingHandler(BaseHTTPRequestHandler):
         print(f"[HTTP] Original path: '{path}', Normalized base_path: '{base_path}'")
         
         try:
+            # Debug: Print all route checks
+            print(f"[HTTP] Checking routes for base_path: '{base_path}'")
+            
             if base_path == '/' or base_path == '/index.html':
+                print(f"[HTTP] Matched root/index route")
                 self.serve_index()
-            elif base_path == '/api/devices':
-                print(f"[HTTP] Matched /api/devices route")
+            elif base_path == '/api/devices' or base_path.strip() == '/api/devices':
+                print(f"[HTTP] ✓ Matched /api/devices route")
                 self.list_devices()
             elif base_path.startswith('/api/devices/') and base_path.endswith('/videos'):
                 # /api/devices/{device_id}/videos
@@ -115,6 +119,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
             else:
                 print(f"[HTTP] 404 - Path not found: {path} (base: {base_path})")
                 print(f"[HTTP] Available routes: /, /index.html, /api/devices, /api/devices/..., /api/videos, /api/video/..., /api/streams, /api/stream/..., /stream/...")
+                print(f"[HTTP] Debug: base_path == '/api/devices' is {base_path == '/api/devices'}")
+                print(f"[HTTP] Debug: base_path type: {type(base_path)}, repr: {repr(base_path)}")
                 self.send_error(404, f"Path not found: {path}")
         except Exception as e:
             print(f"[ERROR] Error handling GET request for {path}: {e}")
@@ -140,8 +146,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
     
     def list_devices(self):
         """API endpoint to list connected devices"""
+        print(f"[API] list_devices() called")
         try:
             if not connection_lock or not device_connections:
+                print(f"[API] connection_lock or device_connections not available")
                 response = json.dumps({'devices': []})
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
