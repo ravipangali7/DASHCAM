@@ -544,7 +544,7 @@
         "kind": 6,
         "importPath": "web_server",
         "description": "web_server",
-        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Log request for debugging (can be disabled if too verbose)\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        if self.path == '/' or self.path == '/index.html':\n            self.serve_index()\n        elif self.path == '/api/videos':\n            self.list_video_files()\n        elif self.path.startswith('/api/video/'):\n            self.serve_video_file()",
+        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Parse path and query string\n        parsed_path = urllib.parse.urlparse(self.path)\n        path = parsed_path.path\n        query = parsed_path.query\n        # Log request for debugging\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        print(f\"[HTTP] Parsed path: {path}, query: {query}\")\n        # Normalize path (remove trailing slash except for root)",
         "detail": "web_server",
         "documentation": {}
     },

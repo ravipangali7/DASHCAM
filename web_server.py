@@ -48,24 +48,47 @@ else:
 
 class StreamingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Log request for debugging (can be disabled if too verbose)
-        print(f"[HTTP] GET {self.path} from {self.client_address[0]}")
+        # Parse path and query string
+        parsed_path = urllib.parse.urlparse(self.path)
+        path = parsed_path.path
+        query = parsed_path.query
         
-        if self.path == '/' or self.path == '/index.html':
-            self.serve_index()
-        elif self.path == '/api/videos':
-            self.list_video_files()
-        elif self.path.startswith('/api/video/'):
-            self.serve_video_file()
-        elif self.path == '/api/streams':
-            self.list_streams()
-        elif self.path.startswith('/api/stream/'):
-            self.stream_video()
-        elif self.path.startswith('/stream/'):
-            self.stream_mjpeg()
-        else:
-            print(f"[HTTP] 404 - Path not found: {self.path}")
-            self.send_error(404)
+        # Log request for debugging
+        print(f"[HTTP] GET {self.path} from {self.client_address[0]}")
+        print(f"[HTTP] Parsed path: {path}, query: {query}")
+        
+        # Normalize path (remove trailing slash except for root)
+        if path != '/' and path.endswith('/'):
+            path = path.rstrip('/')
+        
+        # Remove query string and normalize path
+        base_path = path.split('?')[0].rstrip('/') if path != '/' else path
+        
+        try:
+            if base_path == '/' or base_path == '/index.html':
+                self.serve_index()
+            elif base_path == '/api/videos':
+                self.list_video_files()
+            elif base_path.startswith('/api/video/'):
+                self.serve_video_file()
+            elif base_path == '/api/streams':
+                self.list_streams()
+            elif base_path.startswith('/api/stream/'):
+                self.stream_video()
+            elif base_path.startswith('/stream/'):
+                self.stream_mjpeg()
+            else:
+                print(f"[HTTP] 404 - Path not found: {path} (base: {base_path})")
+                self.send_error(404, f"Path not found: {path}")
+        except Exception as e:
+            print(f"[ERROR] Error handling GET request for {path}: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                if not self.wfile.closed:
+                    self.send_error(500, f"Internal server error: {e}")
+            except:
+                pass  # Connection may be closed
     
     def serve_index(self):
         """Serve the main HTML page"""
@@ -124,8 +147,12 @@ class StreamingHandler(BaseHTTPRequestHandler):
     
     def serve_video_file(self):
         """Serve video file with range request support for seeking"""
+        # Parse path to get filename
+        parsed_path = urllib.parse.urlparse(self.path)
+        path = parsed_path.path
+        
         # Parse filename from path: /api/video/{filename}
-        parts = self.path.split('/')
+        parts = path.split('/')
         if len(parts) < 4:
             self.send_error(400, "Invalid path format. Expected: /api/video/{filename}")
             return
