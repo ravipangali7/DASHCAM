@@ -68,12 +68,18 @@ class StreamingHandler(BaseHTTPRequestHandler):
             path = path.rstrip('/')
         
         # Remove query string and normalize path
-        base_path = path.split('?')[0].rstrip('/') if path != '/' else path
+        base_path = path.split('?')[0]
+        if base_path != '/':
+            base_path = base_path.rstrip('/')
+        
+        # Debug logging
+        print(f"[HTTP] Original path: '{path}', Normalized base_path: '{base_path}'")
         
         try:
             if base_path == '/' or base_path == '/index.html':
                 self.serve_index()
             elif base_path == '/api/devices':
+                print(f"[HTTP] Matched /api/devices route")
                 self.list_devices()
             elif base_path.startswith('/api/devices/') and base_path.endswith('/videos'):
                 # /api/devices/{device_id}/videos
@@ -108,6 +114,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                     self.send_error(503, "Live streaming not available")
             else:
                 print(f"[HTTP] 404 - Path not found: {path} (base: {base_path})")
+                print(f"[HTTP] Available routes: /, /index.html, /api/devices, /api/devices/..., /api/videos, /api/video/..., /api/streams, /api/stream/..., /stream/...")
                 self.send_error(404, f"Path not found: {path}")
         except Exception as e:
             print(f"[ERROR] Error handling GET request for {path}: {e}")
