@@ -175,6 +175,14 @@
         "documentation": {}
     },
     {
+        "label": "BaseHTTPRequestHandler",
+        "importPath": "http.server",
+        "description": "http.server",
+        "isExtraImport": true,
+        "detail": "http.server",
+        "documentation": {}
+    },
+    {
         "label": "HTTPServer",
         "importPath": "http.server",
         "description": "http.server",
@@ -550,16 +558,7 @@
         "kind": 6,
         "importPath": "start_video_server",
         "description": "start_video_server",
-        "peekOfCode": "class VideoFileHandler:\n    def __init__(self):\n        pass\n    def do_GET(self):\n        \"\"\"Handle GET requests\"\"\"\n        # Parse path and query string\n        parsed_path = urllib.parse.urlparse(self.path)\n        path = parsed_path.path\n        query = parsed_path.query\n        # Log request",
-        "detail": "start_video_server",
-        "documentation": {}
-    },
-    {
-        "label": "VideoServerHandler",
-        "kind": 6,
-        "importPath": "start_video_server",
-        "description": "start_video_server",
-        "peekOfCode": "class VideoServerHandler(VideoFileHandler, object):\n    pass\ndef start_server():\n    \"\"\"Start the video file server\"\"\"\n    try:\n        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoServerHandler)\n        print(f\"[*] Video File Server listening on http://0.0.0.0:{WEB_PORT}\")\n        print(f\"[*] Access the video player at: http://localhost:{WEB_PORT}\")\n        print(f\"[*] Press Ctrl+C to stop the server\")\n        server.serve_forever()",
+        "peekOfCode": "class VideoFileHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        \"\"\"Handle GET requests\"\"\"\n        # Parse path and query string\n        parsed_path = urllib.parse.urlparse(self.path)\n        path = parsed_path.path\n        query = parsed_path.query\n        # Log request\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        # Normalize path",
         "detail": "start_video_server",
         "documentation": {}
     },
@@ -568,7 +567,7 @@
         "kind": 2,
         "importPath": "start_video_server",
         "description": "start_video_server",
-        "peekOfCode": "def start_server():\n    \"\"\"Start the video file server\"\"\"\n    try:\n        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoServerHandler)\n        print(f\"[*] Video File Server listening on http://0.0.0.0:{WEB_PORT}\")\n        print(f\"[*] Access the video player at: http://localhost:{WEB_PORT}\")\n        print(f\"[*] Press Ctrl+C to stop the server\")\n        server.serve_forever()\n    except OSError as e:\n        if e.errno == 98 or e.errno == 10048:  # Address already in use (Linux/Windows)",
+        "peekOfCode": "def start_server():\n    \"\"\"Start the video file server\"\"\"\n    try:\n        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoFileHandler)\n        print(f\"[*] Video File Server listening on http://0.0.0.0:{WEB_PORT}\")\n        print(f\"[*] Access the video player at: http://localhost:{WEB_PORT}\")\n        print(f\"[*] Press Ctrl+C to stop the server\")\n        server.serve_forever()\n    except OSError as e:\n        if e.errno == 98 or e.errno == 10048:  # Address already in use (Linux/Windows)",
         "detail": "start_video_server",
         "documentation": {}
     },

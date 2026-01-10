@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import web server components
-from http.server import HTTPServer
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import urllib.parse
 from pathlib import Path
@@ -35,10 +35,7 @@ if not VIDEO_DIR.exists():
 else:
     print(f"[INFO] Using video directory: {VIDEO_DIR}")
 
-class VideoFileHandler:
-    def __init__(self):
-        pass
-    
+class VideoFileHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests"""
         # Parse path and query string
@@ -265,14 +262,10 @@ class VideoFileHandler:
         """Override to reduce default HTTP server logging noise"""
         pass
 
-# Create handler class dynamically
-class VideoServerHandler(VideoFileHandler, object):
-    pass
-
 def start_server():
     """Start the video file server"""
     try:
-        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoServerHandler)
+        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoFileHandler)
         print(f"[*] Video File Server listening on http://0.0.0.0:{WEB_PORT}")
         print(f"[*] Access the video player at: http://localhost:{WEB_PORT}")
         print(f"[*] Press Ctrl+C to stop the server")

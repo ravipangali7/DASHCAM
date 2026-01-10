@@ -194,6 +194,35 @@
             margin-bottom: 15px;
         }
         
+        .server-offline-banner {
+            background: #ff5722;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .server-offline-banner h3 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+        }
+        
+        .server-offline-banner p {
+            margin: 5px 0;
+            font-size: 14px;
+            font-weight: normal;
+        }
+        
+        .server-offline-banner code {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -216,6 +245,14 @@
         </header>
         
         <div class="main-content">
+            <div id="serverOfflineBanner" style="display: none;" class="server-offline-banner">
+                <h3>⚠️ Server is Not Running</h3>
+                <p>Please start the server to view video files.</p>
+                <p style="margin-top: 10px;">
+                    Run: <code>python start_video_server.py</code> or double-click <code>start_server.bat</code>
+                </p>
+            </div>
+            
             <div class="file-list-panel">
                 <div class="file-list-header">
                     <span>Video Files</span>
@@ -258,7 +295,7 @@
         // Use the correct server port (2223) for API calls
         // If you're serving HTML from a different port (like VS Code Live Server on 5500),
         // the API calls will still go to the Python server on port 2223
-        const API_BASE = window.location.protocol + '//' + window.location.hostname + ':2223';
+        const API_BASE = 'http://82.180.145.220:2223';
         
         async function loadVideoFiles() {
             try {
@@ -266,7 +303,12 @@
                 document.getElementById('serverStatus').classList.remove('active');
                 hideError();
                 
-                const response = await fetch(`${API_BASE}/api/videos`);
+                const response = await fetch(`${API_BASE}/api/videos`, {
+                    method: 'GET',
+                    mode: 'cors',
+                    cache: 'no-cache'
+                });
+                
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -278,23 +320,62 @@
                 document.getElementById('serverStatus').textContent = 'Server: Connected';
                 document.getElementById('serverStatus').classList.add('active');
                 
+                // Hide offline banner when server is connected
+                const banner = document.getElementById('serverOfflineBanner');
+                if (banner) {
+                    banner.style.display = 'none';
+                }
+                
                 renderFileList();
             } catch (error) {
                 console.error('Error loading video files:', error);
+                console.error('Error name:', error.name);
+                console.error('Error message:', error.message);
                 
-                // Detect connection refused error
-                const isConnectionRefused = error.message.includes('Failed to fetch') || 
-                                          error.message.includes('NetworkError') ||
-                                          error.name === 'TypeError';
+                // Detect connection refused/network errors
+                // Network errors from fetch() typically show as TypeError
+                const errorMessage = (error.message || String(error) || '').toLowerCase();
+                const errorName = (error.name || '').toLowerCase();
+                const errorString = String(error).toLowerCase();
                 
-                if (isConnectionRefused) {
+                // Check for any connection-related error indicators
+                const isConnectionRefused = 
+                    errorName === 'typeerror' ||  // Most common for network errors
+                    errorMessage.includes('failed to fetch') ||
+                    errorMessage.includes('networkerror') ||
+                    errorMessage.includes('err_connection_refused') ||
+                    errorMessage.includes('connection refused') ||
+                    errorMessage.includes('network request failed') ||
+                    errorMessage.includes('fetch failed') ||
+                    errorMessage.includes('load failed') ||
+                    errorString.includes('connection') ||
+                    errorString.includes('network') ||
+                    errorString.includes('refused');
+                
+                // If it's a TypeError from fetch, it's almost certainly a connection error
+                if (errorName === 'typeerror' || isConnectionRefused) {
                     document.getElementById('serverStatus').textContent = 'Server: Offline';
                     document.getElementById('serverStatus').classList.remove('active');
+                    
+                    // Show prominent banner
+                    const banner = document.getElementById('serverOfflineBanner');
+                    if (banner) {
+                        banner.style.display = 'block';
+                    }
+                    
                     showServerOfflineError();
                 } else {
+                    // Hide banner for other errors
+                    const banner = document.getElementById('serverOfflineBanner');
+                    if (banner) {
+                        banner.style.display = 'none';
+                    }
                     document.getElementById('serverStatus').textContent = 'Server: Error';
                     document.getElementById('serverStatus').classList.remove('active');
-                    showError(`Failed to load video files: ${error.message}`);
+                    const errorMsg = error.message || String(error);
+                    showError(`Failed to load video files: ${errorMsg}`);
+                    document.getElementById('fileList').innerHTML = 
+                        `<div class="error">Failed to load video files: ${escapeHtml(errorMsg)}</div>`;
                 }
             }
         }
@@ -428,6 +509,15 @@
         
         // Load video files on page load
         loadVideoFiles();
+        
+        // Also show error message in the main error area if server is down
+        // This ensures the error is visible even if fileList isn't rendered yet
+        setTimeout(() => {
+            const serverStatus = document.getElementById('serverStatus');
+            if (serverStatus && serverStatus.textContent.includes('Offline')) {
+                showError('The video server is not running. Please start the server using start_server.bat or run: python start_video_server.py');
+            }
+        }, 500);
     </script>
 </body>
 </html>
