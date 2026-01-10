@@ -124,58 +124,6 @@ class DeviceHandler:
                 self.try_video_request(phone, msg_seq)
             elif was_authenticated:
                 print(f"[INFO] Device {phone} re-authenticated (video request already sent)")
-    
-    def try_video_request(self, phone, msg_seq):
-        """Try sending video request with different configurations"""
-        try:
-            # Get server IP from connection (use local address)
-            server_ip = self.conn.getsockname()[0] if self.conn else '0.0.0.0'
-            # If bound to 0.0.0.0, try to get the actual IP the device can reach
-            if server_ip == '0.0.0.0':
-                server_ip = os.environ.get('VIDEO_SERVER_IP', '82.180.145.220')
-            
-            # Use same port as JT808 for video (or separate port if configured)
-            video_port = int(os.environ.get('VIDEO_PORT', JT808_PORT))
-            
-            # Try multiple configurations
-            configs_to_try = [
-                {'channel': 1, 'data_type': 1, 'stream_type': 0, 'desc': 'Channel=1, Video only, Main stream'},
-                {'channel': 0, 'data_type': 1, 'stream_type': 0, 'desc': 'Channel=0, Video only, Main stream'},
-                {'channel': 1, 'data_type': 0, 'stream_type': 0, 'desc': 'Channel=1, AV, Main stream'},
-                {'channel': 0, 'data_type': 0, 'stream_type': 0, 'desc': 'Channel=0, AV, Main stream'},
-                {'channel': 1, 'data_type': 1, 'stream_type': 1, 'desc': 'Channel=1, Video only, Sub stream'},
-            ]
-            
-            # Try first configuration immediately
-            config = configs_to_try[0]
-            try:
-                video_request = self.parser.build_video_realtime_request(
-                    phone=phone,
-                    msg_seq=msg_seq + 1,
-                    server_ip=server_ip,
-                    tcp_port=video_port,
-                    udp_port=video_port,
-                    channel=config['channel'],
-                    data_type=config['data_type'],
-                    stream_type=config['stream_type']
-                )
-                if self.conn:
-                    self.conn.send(video_request)
-                self.video_request_sent = True
-                self.video_request_time = time.time()
-                self.video_request_attempts.append(config)
-                print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, {config['desc']}")
-                print(f"[TX] Request hex: {binascii.hexlify(video_request).decode()[:100]}...")
-                
-                # Start a thread to check if video arrives, if not try alternative configs
-                threading.Thread(target=self.check_video_and_retry, args=(phone, msg_seq, server_ip, video_port, configs_to_try[1:]), daemon=True).start()
-            except Exception as e:
-                print(f"[ERROR] Failed to send video request: {e}")
-                import traceback
-                traceback.print_exc()
-                
-        except Exception as e:
-            print(f"[ERROR] Error in try_video_request: {e}")
         
         # Handle location data upload (0x0200)
         elif msg_id == MSG_ID_LOCATION_UPLOAD:
@@ -307,6 +255,58 @@ class DeviceHandler:
                 potential_data_type = body[1]
                 if potential_data_type in [0, 1, 2, 3]:  # Valid data types
                     print(f"[?] WARNING: This might be a video packet! Channel={potential_channel}, DataType={potential_data_type}")
+    
+    def try_video_request(self, phone, msg_seq):
+        """Try sending video request with different configurations"""
+        try:
+            # Get server IP from connection (use local address)
+            server_ip = self.conn.getsockname()[0] if self.conn else '0.0.0.0'
+            # If bound to 0.0.0.0, try to get the actual IP the device can reach
+            if server_ip == '0.0.0.0':
+                server_ip = os.environ.get('VIDEO_SERVER_IP', '82.180.145.220')
+            
+            # Use same port as JT808 for video (or separate port if configured)
+            video_port = int(os.environ.get('VIDEO_PORT', JT808_PORT))
+            
+            # Try multiple configurations
+            configs_to_try = [
+                {'channel': 1, 'data_type': 1, 'stream_type': 0, 'desc': 'Channel=1, Video only, Main stream'},
+                {'channel': 0, 'data_type': 1, 'stream_type': 0, 'desc': 'Channel=0, Video only, Main stream'},
+                {'channel': 1, 'data_type': 0, 'stream_type': 0, 'desc': 'Channel=1, AV, Main stream'},
+                {'channel': 0, 'data_type': 0, 'stream_type': 0, 'desc': 'Channel=0, AV, Main stream'},
+                {'channel': 1, 'data_type': 1, 'stream_type': 1, 'desc': 'Channel=1, Video only, Sub stream'},
+            ]
+            
+            # Try first configuration immediately
+            config = configs_to_try[0]
+            try:
+                video_request = self.parser.build_video_realtime_request(
+                    phone=phone,
+                    msg_seq=msg_seq + 1,
+                    server_ip=server_ip,
+                    tcp_port=video_port,
+                    udp_port=video_port,
+                    channel=config['channel'],
+                    data_type=config['data_type'],
+                    stream_type=config['stream_type']
+                )
+                if self.conn:
+                    self.conn.send(video_request)
+                self.video_request_sent = True
+                self.video_request_time = time.time()
+                self.video_request_attempts.append(config)
+                print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, {config['desc']}")
+                print(f"[TX] Request hex: {binascii.hexlify(video_request).decode()[:100]}...")
+                
+                # Start a thread to check if video arrives, if not try alternative configs
+                threading.Thread(target=self.check_video_and_retry, args=(phone, msg_seq, server_ip, video_port, configs_to_try[1:]), daemon=True).start()
+            except Exception as e:
+                print(f"[ERROR] Failed to send video request: {e}")
+                import traceback
+                traceback.print_exc()
+                
+        except Exception as e:
+            print(f"[ERROR] Error in try_video_request: {e}")
     
     def check_video_and_retry(self, phone, msg_seq, server_ip, video_port, alternative_configs):
         """Check if video packets arrive, if not try alternative configurations"""
