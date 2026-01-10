@@ -441,6 +441,84 @@ class JT808Parser:
         
         return self.build_response(MSG_ID_VIDEO_LIST_QUERY, phone, msg_seq, body)
     
+    def build_video_control_command(self, phone, msg_seq, control_type, channel, data_type=0xFF, stream_type=0xFF):
+        """
+        Build video control command (0x9202)
+        
+        JTT1078 Protocol Format (Message Body):
+        - Byte 0: Control type (1 byte)
+          0 = Close all channels
+          1 = Switch code stream (switch between different code streams)
+          2 = Switch main/sub stream
+          3 = Switch bitrate
+          4 = Update keyframe interval
+          5 = Add designated terminal
+          6 = Delete designated terminal
+        - Byte 1: Channel number (1 byte)
+        - Byte 2: Data type (1 byte, 0xFF = all types)
+          0 = AV, 1 = Video only, 2 = Audio only
+        - Byte 3: Stream type (1 byte, 0xFF = all streams)
+          0 = Main stream, 1 = Sub stream
+        
+        Args:
+            phone: Device phone number
+            msg_seq: Message sequence number
+            control_type: Control type (0-6)
+            channel: Logical channel number
+            data_type: Data type (0xFF = all types)
+            stream_type: Stream type (0xFF = all streams)
+        """
+        import binascii
+        
+        # Validate parameters
+        if control_type < 0 or control_type > 6:
+            raise ValueError(f"Control type must be 0-6, got {control_type}")
+        if channel < 0 or channel > 255:
+            raise ValueError(f"Channel must be 0-255, got {channel}")
+        
+        # Build message body with detailed logging
+        body = bytearray()
+        
+        # Byte 0: Control type
+        body.extend(struct.pack('>B', control_type))
+        control_type_names = {
+            0: 'Close all channels',
+            1: 'Switch code stream',
+            2: 'Switch main/sub stream',
+            3: 'Switch bitrate',
+            4: 'Update keyframe interval',
+            5: 'Add designated terminal',
+            6: 'Delete designated terminal'
+        }
+        print(f"[PROTOCOL 0x9202] Field 0: Control type = {control_type} ({control_type_names.get(control_type, 'Unknown')})")
+        
+        # Byte 1: Channel number
+        body.extend(struct.pack('>B', channel))
+        print(f"[PROTOCOL 0x9202] Field 1: Channel = {channel} (0x{channel:02X})")
+        
+        # Byte 2: Data type
+        body.extend(struct.pack('>B', data_type))
+        if data_type == 0xFF:
+            print(f"[PROTOCOL 0x9202] Field 2: Data type = 0xFF (All types)")
+        else:
+            data_type_names = {0: 'AV', 1: 'Video only', 2: 'Audio only'}
+            print(f"[PROTOCOL 0x9202] Field 2: Data type = {data_type} ({data_type_names.get(data_type, 'Unknown')})")
+        
+        # Byte 3: Stream type
+        body.extend(struct.pack('>B', stream_type))
+        if stream_type == 0xFF:
+            print(f"[PROTOCOL 0x9202] Field 3: Stream type = 0xFF (All streams)")
+        else:
+            stream_type_names = {0: 'Main stream', 1: 'Sub stream'}
+            print(f"[PROTOCOL 0x9202] Field 3: Stream type = {stream_type} ({stream_type_names.get(stream_type, 'Unknown')})")
+        
+        # Log complete body structure
+        body_bytes = bytes(body)
+        print(f"[PROTOCOL 0x9202] Complete body: {len(body_bytes)} bytes, hex: {binascii.hexlify(body_bytes).decode()}")
+        print(f"[PROTOCOL 0x9202] Body structure: [ControlType(1)][Channel(1)][DataType(1)][StreamType(1)]")
+        
+        return self.build_response(MSG_ID_VIDEO_DATA_CONTROL, phone, msg_seq, body_bytes)
+    
     def parse_video_data(self, body):
         """Parse JTT 1078 video data message"""
         if len(body) < 36:

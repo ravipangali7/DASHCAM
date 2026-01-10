@@ -6,12 +6,14 @@ Protocol References:
 - JTT 808-2013: Terminal communication protocol and data format
 - JTT 1078-2016: Video communication protocol for road transport vehicles
 
-Video Streaming Flow:
+Video Streaming Flow (JTT1078):
 1. Device connects and registers (0x0100)
 2. Device authenticates (0x0102)
-3. Server sends video real-time request (0x9101)
-4. Device acknowledges (0x0001)
-5. Device sends video data (0x9201, 0x9202, etc.)
+3. Server sends video real-time request (0x9101) - Configure video transmission parameters
+4. Device acknowledges (0x0001) - Video request accepted
+5. Server sends video control command (0x9202) - Start video streaming
+6. Device acknowledges (0x0001) - Control command accepted
+7. Device sends video data (0x9201) - Actual video packets
 """
 import socket
 import binascii
@@ -41,6 +43,8 @@ class DeviceHandler:
         self.video_request_attempts = []  # Track video request attempts with different params
         self.video_packets_received = False  # Track if we've received any video packets
         self.video_request_time = None  # Track when video request was sent
+        self.video_control_sent = False  # Track if video control command already sent
+        self.video_control_time = None  # Track when video control command was sent
         self.buffer = bytearray()
         self.message_count = 0
         # Frame reassembly buffers for multi-packet video frames
@@ -109,12 +113,22 @@ class DeviceHandler:
                 print(f"[RESPONSE] Device={phone} acknowledged message ID=0x{reply_id:04X}, "
                       f"Serial={response_info['reply_serial']}, Result={response_info['result_text']}")
                 
-                # If this is a response to video request (0x9101), try alternative configs if failed
+                # If this is a response to video request (0x9101), send video control command
                 if reply_id == MSG_ID_VIDEO_REALTIME_REQUEST:
                     if response_info['result_text'] != 'Success/Confirmation':
                         print(f"[WARNING] Video request was not successful, result: {response_info['result_text']}")
                     else:
-                        print(f"[INFO] Video request acknowledged successfully, waiting for video packets...")
+                        print(f"[INFO] Video request acknowledged successfully, sending video control command...")
+                        # Send video control command (0x9202) to start video streaming
+                        if self.conn and not self.video_control_sent:
+                            # Get channel from last video request attempt
+                            channel = 1  # Default channel
+                            if self.video_request_attempts:
+                                channel = self.video_request_attempts[-1].get('channel', 1)
+                            
+                            # Send control command to start video (control_type=1: Switch code stream)
+                            self.send_video_control_command(phone, msg_seq, channel, control_type=1)
+                        
                         # Send a keep-alive heartbeat to maintain connection
                         if self.conn:
                             try:
@@ -123,6 +137,15 @@ class DeviceHandler:
                                 print(f"[TX] Sent keep-alive heartbeat after video acknowledgment")
                             except:
                                 pass
+                
+                # If this is a response to video control command (0x9202)
+                elif reply_id == MSG_ID_VIDEO_DATA_CONTROL:
+                    if response_info['result_text'] != 'Success/Confirmation':
+                        print(f"[WARNING] Video control command was not successful, result: {response_info['result_text']}")
+                    else:
+                        print(f"[INFO] Video control command acknowledged successfully, waiting for video packets...")
+                        self.video_control_time = time.time()
+                        # Now device should start sending video data (0x9201)
             else:
                 print(f"[RESPONSE] Failed to parse terminal response from {phone}")
                 print(f"[RESPONSE] Body hex: {binascii.hexlify(body).decode()}")
@@ -250,6 +273,10 @@ class DeviceHandler:
                       f"GPS=({video_info['latitude']:.6f}, {video_info['longitude']:.6f})")
         
         # Handle real-time video data (0x9201, 0x9202, 0x9206, 0x9207) - JTT 1078
+        # Note: 0x9202 can be either:
+        # - Video control command (when sent TO device to start/stop video)
+        # - Video data message (when received FROM device with video data)
+        # This handler processes 0x9202 as video data when received from device
         elif msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, 0x9206, 0x9207]:
             # Mark that we've received video packets
             if not self.video_packets_received:
@@ -328,6 +355,68 @@ class DeviceHandler:
                 potential_data_type = body[1]
                 if potential_data_type in [0, 1, 2, 3]:  # Valid data types
                     print(f"[?] WARNING: This might be a video packet! Channel={potential_channel}, DataType={potential_data_type}")
+    
+    def send_video_control_command(self, phone, msg_seq, channel, control_type=1, data_type=0xFF, stream_type=0xFF):
+        """
+        Send video control command (0x9202) to start/stop video streaming
+        
+        JTT1078 Protocol Format (Message Body):
+        - Byte 0: Control type (1 byte)
+          0 = Close all channels
+          1 = Switch code stream (used to start video transmission)
+          2 = Switch main/sub stream
+          3 = Switch bitrate
+          4 = Update keyframe interval
+          5 = Add designated terminal
+          6 = Delete designated terminal
+        - Byte 1: Channel number (1 byte)
+        - Byte 2: Data type (1 byte, 0xFF = all types)
+          0 = AV, 1 = Video only, 2 = Audio only
+        - Byte 3: Stream type (1 byte, 0xFF = all streams)
+          0 = Main stream, 1 = Sub stream
+        
+        Protocol Flow:
+        1. Send 0x9101 (Video Real-time Request) - Configure parameters
+        2. Device acknowledges 0x9101
+        3. Send 0x9202 (Video Control Command) - Start streaming (control_type=1)
+        4. Device acknowledges 0x9202
+        5. Device starts sending 0x9201 (Video Data)
+        
+        Args:
+            phone: Device phone number
+            msg_seq: Message sequence number
+            channel: Logical channel number
+            control_type: Control type (1=Switch code stream to start video)
+            data_type: Data type (0xFF=all types)
+            stream_type: Stream type (0xFF=all streams)
+        """
+        try:
+            if not self.conn:
+                print(f"[ERROR] Cannot send video control command: no connection")
+                return
+            
+            control_command = self.parser.build_video_control_command(
+                phone=phone,
+                msg_seq=msg_seq + 1,
+                control_type=control_type,
+                channel=channel,
+                data_type=data_type,
+                stream_type=stream_type
+            )
+            
+            self.conn.send(control_command)
+            self.video_control_sent = True
+            self.video_control_time = time.time()
+            
+            hex_dump = binascii.hexlify(control_command).decode()
+            formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+            print(f"[TX] Video control command (0x9202) sent to {phone}: Channel={channel}, ControlType={control_type}")
+            print(f"[TX HEX] Complete message: {formatted_hex}")
+            print(f"[TX STRUCT] Message structure: [7E][ID=9202(2)][Attr(2)][Phone={phone}(6)][Seq(2)][Body(4)][Checksum(1)][7E]")
+        except Exception as e:
+            print(f"[ERROR] Failed to send video control command: {e}")
+            import traceback
+            traceback.print_exc()
     
     def query_video_list(self, phone, msg_seq):
         """Query video list from device (0x9205)"""
