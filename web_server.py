@@ -11,20 +11,20 @@ import urllib.parse
 from pathlib import Path
 from datetime import datetime
 
-# Error handling for imports
+# Error handling for imports (optional - only needed for live streaming)
 try:
     from video_streamer import stream_manager
 except ImportError as e:
-    print(f"[ERROR] Failed to import video_streamer: {e}")
-    print("[ERROR] Make sure video_streamer.py exists in the same directory")
-    sys.exit(1)
+    print(f"[WARNING] Failed to import video_streamer: {e}")
+    print("[WARNING] Live streaming features will be disabled")
+    stream_manager = None
 
 try:
     from server import start_jt808_server
 except ImportError as e:
-    print(f"[ERROR] Failed to import server: {e}")
-    print("[ERROR] Make sure server.py exists in the same directory")
-    sys.exit(1)
+    print(f"[WARNING] Failed to import server: {e}")
+    print("[WARNING] JTT808 server will not start - only video file playback available")
+    start_jt808_server = None
 
 WEB_PORT = 2223
 
@@ -72,11 +72,20 @@ class StreamingHandler(BaseHTTPRequestHandler):
             elif base_path.startswith('/api/video/'):
                 self.serve_video_file()
             elif base_path == '/api/streams':
-                self.list_streams()
+                if stream_manager:
+                    self.list_streams()
+                else:
+                    self.send_error(503, "Live streaming not available")
             elif base_path.startswith('/api/stream/'):
-                self.stream_video()
+                if stream_manager:
+                    self.stream_video()
+                else:
+                    self.send_error(503, "Live streaming not available")
             elif base_path.startswith('/stream/'):
-                self.stream_mjpeg()
+                if stream_manager:
+                    self.stream_mjpeg()
+                else:
+                    self.send_error(503, "Live streaming not available")
             else:
                 print(f"[HTTP] 404 - Path not found: {path} (base: {base_path})")
                 self.send_error(404, f"Path not found: {path}")
@@ -277,6 +286,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
     
     def list_streams(self):
         """API endpoint to list active streams"""
+        if not stream_manager:
+            self.send_error(503, "Live streaming not available")
+            return
+            
         try:
             streams = stream_manager.get_active_streams()
             response = json.dumps({'streams': streams})
@@ -296,6 +309,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
     
     def stream_video(self):
         """Stream video data (H.264 NAL units)"""
+        if not stream_manager:
+            self.send_error(503, "Live streaming not available")
+            return
+            
         # Parse device and channel from path: /api/stream/{device_id}/{channel}
         # Path structure: /api/stream/{device_id}/{channel}
         # After split('/'): ['', 'api', 'stream', '{device_id}', '{channel}']
@@ -332,6 +349,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
     
     def stream_mjpeg(self):
         """Stream MJPEG (for browsers that support it)"""
+        if not stream_manager:
+            self.send_error(503, "Live streaming not available")
+            return
+            
         # Parse device and channel from path: /stream/{device_id}/{channel}
         # Path structure: /stream/{device_id}/{channel}
         # After split('/'): ['', 'stream', '{device_id}', '{channel}']
@@ -397,23 +418,26 @@ def start_web_server():
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("[*] Starting JTT 808/1078 Video Streaming Server...")
-    print("[*] This will start both the JTT808 server (port 2222) and Web server (port 2223)")
+    print("[*] Starting Video File Player Web Server...")
+    print("[*] Web server will listen on port 2223")
     
-    # Start JTT 808 server in background thread
-    try:
-        jt808_thread = threading.Thread(target=start_jt808_server, daemon=True)
-        jt808_thread.start()
-        print("[*] JTT808 server thread started (will listen on port 2222)")
-        # Give it a moment to start
-        import time
-        time.sleep(0.5)
-    except Exception as e:
-        print(f"[ERROR] Failed to start JTT808 server thread: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    # Start JTT 808 server in background thread (optional - only if available)
+    if start_jt808_server:
+        try:
+            print("[*] Starting JTT808 server (port 2222) in background...")
+            jt808_thread = threading.Thread(target=start_jt808_server, daemon=True)
+            jt808_thread.start()
+            print("[*] JTT808 server thread started (will listen on port 2222)")
+            # Give it a moment to start
+            import time
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"[WARNING] Failed to start JTT808 server thread: {e}")
+            print("[WARNING] Continuing with video file playback only...")
+    else:
+        print("[*] JTT808 server not available - video file playback only")
     
     # Start web server in main thread
-    print("[*] Starting web server...")
+    print("[*] Starting web server on port 2223...")
+    print("[*] Access the video player at: http://localhost:2223")
     start_web_server()

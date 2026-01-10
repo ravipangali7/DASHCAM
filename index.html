@@ -255,7 +255,10 @@
     <script>
         let videoFiles = [];
         let currentVideo = null;
-        const API_BASE = window.location.origin;
+        // Use the correct server port (2223) for API calls
+        // If you're serving HTML from a different port (like VS Code Live Server on 5500),
+        // the API calls will still go to the Python server on port 2223
+        const API_BASE = window.location.protocol + '//' + window.location.hostname + ':2223';
         
         async function loadVideoFiles() {
             try {
