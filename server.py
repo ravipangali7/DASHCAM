@@ -1100,16 +1100,31 @@ class DeviceHandler:
     def _start_timeout_checker(self):
         """Start background thread to check for buffer timeouts"""
         if self._timeout_check_thread is not None and self._timeout_check_thread.is_alive():
+            print(f"[TIMEOUT CHECKER] Already running, skipping start")
             return  # Already running
         
+        print(f"[TIMEOUT CHECKER] Starting background timeout checker thread")
+        
         def check_timeout():
-            while self._video_list_query_in_progress and self.video_list_received_time is not None:
-                time.sleep(2)  # Check every 2 seconds
+            print(f"[TIMEOUT CHECKER] Thread started, checking for timeouts...")
+            print(f"[TIMEOUT CHECKER] Initial state: query_in_progress={self._video_list_query_in_progress}, received_time={self.video_list_received_time}")
+            iteration = 0
+            initial_time = self.video_list_received_time
+            max_iterations = int(self.video_list_buffer_timeout / 2) + 2  # Check for at least timeout duration + buffer
+            
+            while iteration < max_iterations:
+                iteration += 1
+                # Check conditions before sleeping
                 if not self._video_list_query_in_progress:
+                    print(f"[TIMEOUT CHECKER] Query no longer in progress, exiting (iteration {iteration})")
                     break
                 if self.video_list_received_time is None:
+                    print(f"[TIMEOUT CHECKER] Received time is None, exiting (iteration {iteration})")
                     break
+                
                 elapsed = time.time() - self.video_list_received_time
+                print(f"[TIMEOUT CHECKER] Iteration {iteration}: elapsed={elapsed:.1f}s, timeout={self.video_list_buffer_timeout}s, query_in_progress={self._video_list_query_in_progress}, buffer_size={len(self.video_list_buffer)}")
+                
                 if elapsed > self.video_list_buffer_timeout:
                     print(f"[VIDEO LIST TIMEOUT] Proactive timeout detected ({elapsed:.1f}s), resetting buffer")
                     # Reset buffer state
@@ -1118,10 +1133,19 @@ class DeviceHandler:
                     self.video_list_expected_size = None
                     self.video_list_received_time = None
                     self._video_list_query_in_progress = False
+                    print(f"[TIMEOUT CHECKER] Buffer reset complete, exiting")
                     break
+                
+                # Sleep after checking (except on last iteration)
+                if iteration < max_iterations:
+                    time.sleep(2)  # Check every 2 seconds
+            
+            if iteration >= max_iterations:
+                print(f"[TIMEOUT CHECKER] Reached max iterations ({max_iterations}), exiting")
         
         self._timeout_check_thread = threading.Thread(target=check_timeout, daemon=True)
         self._timeout_check_thread.start()
+        print(f"[TIMEOUT CHECKER] Thread started: {self._timeout_check_thread}")
     
     def _stop_timeout_checker(self):
         """Stop the timeout checker thread"""
