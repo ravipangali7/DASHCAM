@@ -280,6 +280,34 @@ class JT808Parser:
         
         return self.build_response(MSG_ID_VIDEO_REALTIME_REQUEST, phone, msg_seq, body)
     
+    def build_video_list_query(self, phone, msg_seq, channel=0xFF, video_type=0xFF, start_time=None, end_time=None):
+        """
+        Build video list query (0x9205)
+        
+        Args:
+            phone: Device phone number
+            msg_seq: Message sequence number
+            channel: Logical channel number (0xFF = all channels)
+            video_type: Video type (0xFF = all types)
+            start_time: Start time (BCD format: YYMMDDHHmmss, None = no limit)
+            end_time: End time (BCD format: YYMMDDHHmmss, None = no limit)
+        """
+        body = struct.pack('>B', channel)  # Channel number
+        body += struct.pack('>B', video_type)  # Video type
+        
+        # Time range (optional, 6 bytes each)
+        if start_time:
+            body += start_time
+        else:
+            body += b'\xFF' * 6  # No start time limit
+        
+        if end_time:
+            body += end_time
+        else:
+            body += b'\xFF' * 6  # No end time limit
+        
+        return self.build_response(MSG_ID_VIDEO_LIST_QUERY, phone, msg_seq, body)
+    
     def parse_video_data(self, body):
         """Parse JTT 1078 video data message"""
         if len(body) < 36:
