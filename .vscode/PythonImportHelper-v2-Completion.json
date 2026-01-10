@@ -209,6 +209,31 @@
         "documentation": {}
     },
     {
+        "label": "urllib.parse",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "urllib.parse",
+        "description": "urllib.parse",
+        "detail": "urllib.parse",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
         "label": "JT808Parser",
         "kind": 6,
         "importPath": "jt808_protocol",
@@ -519,7 +544,7 @@
         "kind": 6,
         "importPath": "web_server",
         "description": "web_server",
-        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Log request for debugging (can be disabled if too verbose)\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        if self.path == '/' or self.path == '/index.html':\n            self.serve_index()\n        elif self.path == '/api/streams':\n            self.list_streams()\n        elif self.path.startswith('/api/stream/'):\n            self.stream_video()",
+        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Log request for debugging (can be disabled if too verbose)\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        if self.path == '/' or self.path == '/index.html':\n            self.serve_index()\n        elif self.path == '/api/videos':\n            self.list_video_files()\n        elif self.path.startswith('/api/video/'):\n            self.serve_video_file()",
         "detail": "web_server",
         "documentation": {}
     },
@@ -537,7 +562,34 @@
         "kind": 5,
         "importPath": "web_server",
         "description": "web_server",
-        "peekOfCode": "WEB_PORT = 2223\nclass StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Log request for debugging (can be disabled if too verbose)\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        if self.path == '/' or self.path == '/index.html':\n            self.serve_index()\n        elif self.path == '/api/streams':\n            self.list_streams()\n        elif self.path.startswith('/api/stream/'):",
+        "peekOfCode": "WEB_PORT = 2223\n# Video directory configuration\nVIDEO_DIR = os.environ.get('VIDEO_DIR', './videos')\nVIDEO_DIR = Path(VIDEO_DIR).resolve()\n# Supported video file extensions\nVIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)",
+        "detail": "web_server",
+        "documentation": {}
+    },
+    {
+        "label": "VIDEO_DIR",
+        "kind": 5,
+        "importPath": "web_server",
+        "description": "web_server",
+        "peekOfCode": "VIDEO_DIR = os.environ.get('VIDEO_DIR', './videos')\nVIDEO_DIR = Path(VIDEO_DIR).resolve()\n# Supported video file extensions\nVIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)\n        print(f\"[INFO] Created video directory: {VIDEO_DIR}\")\n    except Exception as e:",
+        "detail": "web_server",
+        "documentation": {}
+    },
+    {
+        "label": "VIDEO_DIR",
+        "kind": 5,
+        "importPath": "web_server",
+        "description": "web_server",
+        "peekOfCode": "VIDEO_DIR = Path(VIDEO_DIR).resolve()\n# Supported video file extensions\nVIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)\n        print(f\"[INFO] Created video directory: {VIDEO_DIR}\")\n    except Exception as e:\n        print(f\"[WARNING] Failed to create video directory {VIDEO_DIR}: {e}\")",
+        "detail": "web_server",
+        "documentation": {}
+    },
+    {
+        "label": "VIDEO_EXTENSIONS",
+        "kind": 5,
+        "importPath": "web_server",
+        "description": "web_server",
+        "peekOfCode": "VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)\n        print(f\"[INFO] Created video directory: {VIDEO_DIR}\")\n    except Exception as e:\n        print(f\"[WARNING] Failed to create video directory {VIDEO_DIR}: {e}\")\n        print(f\"[WARNING] Video file serving may not work properly\")\nelse:",
         "detail": "web_server",
         "documentation": {}
     }

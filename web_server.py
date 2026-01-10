@@ -7,6 +7,9 @@ import json
 import threading
 import sys
 import os
+import urllib.parse
+from pathlib import Path
+from datetime import datetime
 
 # Error handling for imports
 try:
@@ -25,6 +28,24 @@ except ImportError as e:
 
 WEB_PORT = 2223
 
+# Video directory configuration
+VIDEO_DIR = os.environ.get('VIDEO_DIR', './videos')
+VIDEO_DIR = Path(VIDEO_DIR).resolve()
+
+# Supported video file extensions
+VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}
+
+# Create video directory if it doesn't exist
+if not VIDEO_DIR.exists():
+    try:
+        VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"[INFO] Created video directory: {VIDEO_DIR}")
+    except Exception as e:
+        print(f"[WARNING] Failed to create video directory {VIDEO_DIR}: {e}")
+        print(f"[WARNING] Video file serving may not work properly")
+else:
+    print(f"[INFO] Using video directory: {VIDEO_DIR}")
+
 class StreamingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Log request for debugging (can be disabled if too verbose)
@@ -32,6 +53,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
         
         if self.path == '/' or self.path == '/index.html':
             self.serve_index()
+        elif self.path == '/api/videos':
+            self.list_video_files()
+        elif self.path.startswith('/api/video/'):
+            self.serve_video_file()
         elif self.path == '/api/streams':
             self.list_streams()
         elif self.path.startswith('/api/stream/'):
@@ -53,6 +78,175 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
         except FileNotFoundError:
             self.send_error(404, "index.html not found")
+    
+    def list_video_files(self):
+        """API endpoint to list available video files"""
+        try:
+            videos = []
+            
+            if not VIDEO_DIR.exists():
+                print(f"[API] /api/videos - Video directory does not exist: {VIDEO_DIR}")
+                response = json.dumps({'videos': []})
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(response.encode())
+                return
+            
+            # Scan video directory for video files
+            for file_path in VIDEO_DIR.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in VIDEO_EXTENSIONS:
+                    stat = file_path.stat()
+                    videos.append({
+                        'filename': file_path.name,
+                        'size': stat.st_size,
+                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+            
+            # Sort by modified date (newest first)
+            videos.sort(key=lambda x: x['modified'], reverse=True)
+            
+            response = json.dumps({'videos': videos})
+            
+            print(f"[API] /api/videos - Returning {len(videos)} video file(s)")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(response.encode())
+        except Exception as e:
+            print(f"[ERROR] Error in list_video_files: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
+    def serve_video_file(self):
+        """Serve video file with range request support for seeking"""
+        # Parse filename from path: /api/video/{filename}
+        parts = self.path.split('/')
+        if len(parts) < 4:
+            self.send_error(400, "Invalid path format. Expected: /api/video/{filename}")
+            return
+        
+        try:
+            # Decode URL-encoded filename
+            filename = urllib.parse.unquote(parts[3])
+            
+            # Security: Prevent directory traversal
+            if '..' in filename or '/' in filename or '\\' in filename:
+                self.send_error(400, "Invalid filename")
+                return
+            
+            # Build full file path
+            file_path = VIDEO_DIR / filename
+            
+            # Security: Ensure file is within video directory
+            try:
+                file_path = file_path.resolve()
+                if not str(file_path).startswith(str(VIDEO_DIR.resolve())):
+                    self.send_error(403, "Access denied")
+                    return
+            except:
+                self.send_error(400, "Invalid file path")
+                return
+            
+            # Check if file exists
+            if not file_path.exists() or not file_path.is_file():
+                print(f"[API] /api/video/{filename} - File not found")
+                self.send_error(404, "Video file not found")
+                return
+            
+            # Check if it's a video file
+            if file_path.suffix.lower() not in VIDEO_EXTENSIONS:
+                self.send_error(400, "Not a video file")
+                return
+            
+            # Get file size
+            file_size = file_path.stat().st_size
+            
+            # Handle range requests for video seeking
+            range_header = self.headers.get('Range')
+            
+            if range_header:
+                # Parse range header (e.g., "bytes=0-1023" or "bytes=1024-")
+                range_match = range_header.replace('bytes=', '').split('-')
+                start = int(range_match[0]) if range_match[0] else 0
+                end = int(range_match[1]) if range_match[1] and range_match[1] else file_size - 1
+                
+                # Validate range
+                if start < 0 or end >= file_size or start > end:
+                    self.send_response(416)  # Range Not Satisfiable
+                    self.send_header('Content-Range', f'bytes */{file_size}')
+                    self.end_headers()
+                    return
+                
+                # Send partial content
+                content_length = end - start + 1
+                
+                self.send_response(206)  # Partial Content
+                self.send_header('Content-Type', self.get_content_type(file_path))
+                self.send_header('Content-Length', str(content_length))
+                self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                
+                # Read and send the requested range
+                with open(file_path, 'rb') as f:
+                    f.seek(start)
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk_size = min(8192, remaining)
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                
+                print(f"[API] /api/video/{filename} - Sent range {start}-{end} ({content_length} bytes)")
+            else:
+                # Send entire file
+                self.send_response(200)
+                self.send_header('Content-Type', self.get_content_type(file_path))
+                self.send_header('Content-Length', str(file_size))
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                
+                # Read and send file
+                with open(file_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(8192)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                
+                print(f"[API] /api/video/{filename} - Sent entire file ({file_size} bytes)")
+                
+        except Exception as e:
+            print(f"[ERROR] Error serving video file {filename}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
+    def get_content_type(self, file_path):
+        """Get content type based on file extension"""
+        ext = file_path.suffix.lower()
+        content_types = {
+            '.mp4': 'video/mp4',
+            '.avi': 'video/x-msvideo',
+            '.mkv': 'video/x-matroska',
+            '.mov': 'video/quicktime',
+            '.wmv': 'video/x-ms-wmv',
+            '.flv': 'video/x-flv',
+            '.webm': 'video/webm',
+            '.m4v': 'video/x-m4v',
+            '.h264': 'video/h264',
+            '.264': 'video/h264',
+        }
+        return content_types.get(ext, 'application/octet-stream')
     
     def list_streams(self):
         """API endpoint to list active streams"""

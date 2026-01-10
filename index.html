@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JTT 1078 Live Streaming Dashboard</title>
+    <title>Video File Player</title>
     <style>
         * {
             margin: 0;
@@ -54,36 +54,70 @@
             color: white;
         }
         
-        .streams-grid {
+        .main-content {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            grid-template-columns: 300px 1fr;
             gap: 20px;
         }
         
-        .stream-card {
+        .file-list-panel {
             background: rgba(255, 255, 255, 0.95);
             border-radius: 10px;
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
         }
         
-        .stream-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        
-        .stream-title {
+        .file-list-header {
             font-size: 18px;
             font-weight: bold;
             color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
-        .stream-info {
-            font-size: 12px;
+        .file-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .file-item:hover {
+            background: #e0e0e0;
+        }
+        
+        .file-item.selected {
+            background: #667eea;
+            color: white;
+        }
+        
+        .file-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+        
+        .file-meta {
+            font-size: 11px;
             color: #666;
-            margin-bottom: 10px;
+            margin-top: 4px;
+        }
+        
+        .file-item.selected .file-meta {
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .video-player-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
         
         .video-container {
@@ -93,7 +127,7 @@
             border-radius: 5px;
             overflow: hidden;
             aspect-ratio: 16/9;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
         
         video {
@@ -111,23 +145,23 @@
             font-size: 14px;
         }
         
-        .gps-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            font-size: 12px;
-            color: #666;
-        }
-        
-        .gps-item {
-            padding: 8px;
+        .video-info {
+            padding: 15px;
             background: #f5f5f5;
             border-radius: 5px;
+            margin-bottom: 15px;
         }
         
-        .gps-label {
+        .video-info-item {
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .video-info-label {
             font-weight: bold;
             color: #333;
+            display: inline-block;
+            width: 120px;
         }
         
         .refresh-btn {
@@ -138,7 +172,8 @@
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
-            margin-top: 20px;
+            margin-top: 10px;
+            width: 100%;
         }
         
         .refresh-btn:hover {
@@ -150,162 +185,206 @@
             padding: 20px;
             color: #666;
         }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .file-list-panel {
+                max-height: 300px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎥 JTT 1078 Live Streaming Dashboard</h1>
+            <h1>Video File Player</h1>
             <div class="status">
                 <div class="status-item" id="serverStatus">Server: Connecting...</div>
-                <div class="status-item" id="streamCount">Active Streams: 0</div>
+                <div class="status-item" id="fileCount">Video Files: 0</div>
             </div>
         </header>
         
-        <div id="streamsContainer" class="streams-grid">
-            <div class="loading">Loading streams...</div>
+        <div class="main-content">
+            <div class="file-list-panel">
+                <div class="file-list-header">
+                    <span>Video Files</span>
+                </div>
+                <div id="fileList">
+                    <div class="loading">Loading video files...</div>
+                </div>
+                <button class="refresh-btn" onclick="loadVideoFiles()">🔄 Refresh List</button>
+            </div>
+            
+            <div class="video-player-panel">
+                <div id="errorMessage" style="display: none;"></div>
+                <div class="video-container">
+                    <video id="videoPlayer" controls preload="metadata">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="no-video" id="noVideoMessage">Select a video file to play</div>
+                </div>
+                <div class="video-info" id="videoInfo" style="display: none;">
+                    <div class="video-info-item">
+                        <span class="video-info-label">File:</span>
+                        <span id="infoFileName">-</span>
+                    </div>
+                    <div class="video-info-item">
+                        <span class="video-info-label">Size:</span>
+                        <span id="infoFileSize">-</span>
+                    </div>
+                    <div class="video-info-item">
+                        <span class="video-info-label">Modified:</span>
+                        <span id="infoFileDate">-</span>
+                    </div>
+                </div>
+            </div>
         </div>
-        
-        <button class="refresh-btn" onclick="loadStreams()">🔄 Refresh Streams</button>
     </div>
     
     <script>
-        let streams = [];
-        let videoElements = {};
+        let videoFiles = [];
+        let currentVideo = null;
+        const API_BASE = window.location.origin;
         
-        async function loadStreams() {
+        async function loadVideoFiles() {
             try {
-                const response = await fetch('http://82.180.145.220:2223/api/streams');
-                const data = await response.json();
-                streams = data.streams || [];
+                document.getElementById('serverStatus').textContent = 'Server: Loading...';
+                document.getElementById('serverStatus').classList.remove('active');
                 
-                document.getElementById('streamCount').textContent = `Active Streams: ${streams.length}`;
+                const response = await fetch(`${API_BASE}/api/videos`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                videoFiles = data.videos || [];
+                
+                document.getElementById('fileCount').textContent = `Video Files: ${videoFiles.length}`;
                 document.getElementById('serverStatus').textContent = 'Server: Connected';
                 document.getElementById('serverStatus').classList.add('active');
                 
-                renderStreams();
+                renderFileList();
             } catch (error) {
-                console.error('Error loading streams:', error);
+                console.error('Error loading video files:', error);
                 document.getElementById('serverStatus').textContent = 'Server: Error';
                 document.getElementById('serverStatus').classList.remove('active');
+                document.getElementById('fileList').innerHTML = 
+                    '<div class="error">Failed to load video files. Please check if the server is running.</div>';
             }
         }
         
-        function renderStreams() {
-            const container = document.getElementById('streamsContainer');
+        function renderFileList() {
+            const container = document.getElementById('fileList');
             
-            if (streams.length === 0) {
-                container.innerHTML = '<div class="loading">No active streams. Waiting for devices...</div>';
+            if (videoFiles.length === 0) {
+                container.innerHTML = '<div class="loading">No video files found.</div>';
                 return;
             }
             
-            container.innerHTML = streams.map(stream => {
-                const streamId = `${stream.device_id}_${stream.channel}`;
-                const videoId = `video_${streamId}`;
-                
+            container.innerHTML = videoFiles.map((file, index) => {
+                const isSelected = currentVideo && currentVideo.filename === file.filename;
                 return `
-                    <div class="stream-card">
-                        <div class="stream-header">
-                            <div class="stream-title">Device: ${stream.device_id}</div>
-                            <div class="stream-info">Channel: ${stream.channel}</div>
-                        </div>
-                        <div class="video-container">
-                            <video id="${videoId}" autoplay muted playsinline></video>
-                            <div class="no-video" id="noVideo_${streamId}">Waiting for video data...</div>
-                        </div>
-                        <div class="gps-info">
-                            <div class="gps-item">
-                                <span class="gps-label">Latitude:</span> ${stream.info.latitude?.toFixed(6) || 'N/A'}
-                            </div>
-                            <div class="gps-item">
-                                <span class="gps-label">Longitude:</span> ${stream.info.longitude?.toFixed(6) || 'N/A'}
-                            </div>
-                            <div class="gps-item">
-                                <span class="gps-label">Speed:</span> ${stream.info.speed?.toFixed(1) || 'N/A'} km/h
-                            </div>
-                            <div class="gps-item">
-                                <span class="gps-label">Direction:</span> ${stream.info.direction || 'N/A'}°
-                            </div>
+                    <div class="file-item ${isSelected ? 'selected' : ''}" onclick="selectVideo(${index})">
+                        <div class="file-name">${escapeHtml(file.filename)}</div>
+                        <div class="file-meta">
+                            ${formatFileSize(file.size)} • ${formatDate(file.modified)}
                         </div>
                     </div>
                 `;
             }).join('');
-            
-            // Initialize video players
-            streams.forEach(stream => {
-                const streamId = `${stream.device_id}_${stream.channel}`;
-                const videoId = `video_${streamId}`;
-                const video = document.getElementById(videoId);
-                
-                if (video) {
-                    videoElements[streamId] = video;
-                    startVideoStream(stream.device_id, stream.channel, streamId);
-                }
-            });
         }
         
-        function startVideoStream(deviceId, channel, streamId) {
-            const video = videoElements[streamId];
-            const noVideoDiv = document.getElementById(`noVideo_${streamId}`);
-            
-            // Create MediaSource for H.264 streaming
-            if ('MediaSource' in window) {
-                const mediaSource = new MediaSource();
-                video.src = URL.createObjectURL(mediaSource);
-                
-                mediaSource.addEventListener('sourceopen', () => {
-                    // Note: Browser support for H.264 via MediaSource is limited
-                    // For production, you'd need to transcode to WebM or use WebRTC
-                    console.log('MediaSource opened for', streamId);
-                });
+        function selectVideo(index) {
+            if (index < 0 || index >= videoFiles.length) {
+                return;
             }
             
-            // Alternative: Fetch video chunks and display
-            let frameCount = 0;
+            const file = videoFiles[index];
+            currentVideo = file;
             
-            async function fetchFrame() {
-                try {
-                    const response = await fetch(`http://82.180.145.220:2223/api/stream/${deviceId}/${channel}`);
-                    if (response.ok) {
-                        const blob = await response.blob();
-                        
-                        if (blob.size > 0) {
-                            frameCount++;
-                            const url = URL.createObjectURL(blob);
-                            
-                            // Try to display as image if it's JPEG
-                            const img = new Image();
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = img.width;
-                                canvas.height = img.height;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0);
-                                
-                                if (video) {
-                                    video.src = canvas.toDataURL('image/jpeg');
-                                    if (noVideoDiv) noVideoDiv.style.display = 'none';
-                                }
-                            };
-                            img.src = url;
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error fetching frame:', error);
-                }
-                
-                // Continue fetching
-                setTimeout(fetchFrame, 100); // 10 FPS
-            }
+            // Update UI
+            renderFileList();
+            hideError();
             
-            fetchFrame();
+            // Show video info
+            document.getElementById('videoInfo').style.display = 'block';
+            document.getElementById('infoFileName').textContent = file.filename;
+            document.getElementById('infoFileSize').textContent = formatFileSize(file.size);
+            document.getElementById('infoFileDate').textContent = formatDate(file.modified);
+            
+            // Load video
+            const video = document.getElementById('videoPlayer');
+            const noVideoMessage = document.getElementById('noVideoMessage');
+            
+            // Hide no video message
+            noVideoMessage.style.display = 'none';
+            
+            // Set video source
+            const videoUrl = `${API_BASE}/api/video/${encodeURIComponent(file.filename)}`;
+            video.src = videoUrl;
+            
+            // Show video element
+            video.style.display = 'block';
+            
+            // Load video
+            video.load();
+            
+            // Handle errors
+            video.onerror = () => {
+                showError(`Failed to load video: ${file.filename}`);
+                noVideoMessage.style.display = 'flex';
+                video.style.display = 'none';
+            };
         }
         
-        // Load streams on page load
-        loadStreams();
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
         
-        // Auto-refresh every 5 seconds
-        setInterval(loadStreams, 5000);
+        function formatDate(dateString) {
+            if (!dateString) return 'Unknown';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleString();
+            } catch (e) {
+                return dateString;
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.className = 'error';
+            errorDiv.style.display = 'block';
+        }
+        
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+        
+        // Load video files on page load
+        loadVideoFiles();
     </script>
 </body>
 </html>
