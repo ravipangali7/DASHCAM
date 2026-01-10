@@ -103,6 +103,14 @@
         "documentation": {}
     },
     {
+        "label": "MSG_ID_VIDEO_UPLOAD_INIT",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
         "label": "MSG_ID_LOCATION_UPLOAD",
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
@@ -152,6 +160,14 @@
     },
     {
         "label": "MSG_ID_VIDEO_LIST_QUERY",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_DOWNLOAD_REQUEST",
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
         "isExtraImport": true,
@@ -315,7 +331,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205",
+        "peekOfCode": "MSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -324,7 +340,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206",
+        "peekOfCode": "MSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -333,7 +349,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201",
+        "peekOfCode": "MSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -342,7 +358,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202",
+        "peekOfCode": "MSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -351,7 +367,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205",
+        "peekOfCode": "MSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -360,7 +376,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205",
+        "peekOfCode": "MSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -369,7 +385,7 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants",
+        "peekOfCode": "MSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -378,7 +394,16 @@
         "kind": 5,
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
-        "peekOfCode": "MSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D",
+        "peekOfCode": "MSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_DOWNLOAD_REQUEST",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D",
         "detail": "jt808_protocol",
         "documentation": {}
     },
@@ -630,7 +655,7 @@
         "kind": 6,
         "importPath": "web_server",
         "description": "web_server",
-        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Parse path and query string\n        parsed_path = urllib.parse.urlparse(self.path)\n        path = parsed_path.path\n        query = parsed_path.query\n        # Log request for debugging\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        print(f\"[HTTP] Parsed path: {path}, query: {query}\")\n        # Normalize path (remove trailing slash except for root)",
+        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_POST(self):\n        \"\"\"Handle POST requests\"\"\"\n        self.do_GET()  # Route to do_GET for now, check command in handler\n    def do_GET(self):\n        # Parse path and query string\n        parsed_path = urllib.parse.urlparse(self.path)\n        path = parsed_path.path\n        query = parsed_path.query\n        # Log request for debugging",
         "detail": "web_server",
         "documentation": {}
     },

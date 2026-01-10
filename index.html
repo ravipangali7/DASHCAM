@@ -237,30 +237,30 @@
 <body>
     <div class="container">
         <header>
-            <h1>Video File Player</h1>
+            <h1>Dashcam Video Player</h1>
             <div class="status">
                 <div class="status-item" id="serverStatus">Server: Connecting...</div>
-                <div class="status-item" id="fileCount">Video Files: 0</div>
+                <div class="status-item" id="deviceCount">Devices: 0</div>
             </div>
         </header>
         
         <div class="main-content">
             <div id="serverOfflineBanner" style="display: none;" class="server-offline-banner">
                 <h3>⚠️ Server is Not Running</h3>
-                <p>Please start the server to view video files.</p>
+                <p>Please start the server to view dashcam videos.</p>
                 <p style="margin-top: 10px;">
-                    Run: <code>python start_video_server.py</code> or double-click <code>start_server.bat</code>
+                    Run: <code>python web_server.py</code> or double-click <code>start_server.bat</code>
                 </p>
             </div>
             
             <div class="file-list-panel">
                 <div class="file-list-header">
-                    <span>Video Files</span>
+                    <span>Dashcam Devices</span>
+                    <button class="refresh-btn" onclick="loadDevices()" style="width: auto; padding: 5px 10px; margin: 0;">🔄 Refresh</button>
                 </div>
-                <div id="fileList">
-                    <div class="loading">Loading video files...</div>
+                <div id="deviceList">
+                    <div class="loading">Loading devices...</div>
                 </div>
-                <button class="refresh-btn" onclick="loadVideoFiles()">🔄 Refresh List</button>
             </div>
             
             <div class="video-player-panel">
@@ -269,20 +269,24 @@
                     <video id="videoPlayer" controls preload="metadata">
                         Your browser does not support the video tag.
                     </video>
-                    <div class="no-video" id="noVideoMessage">Select a video file to play</div>
+                    <div class="no-video" id="noVideoMessage">Select a stored video from dashcam to play</div>
                 </div>
                 <div class="video-info" id="videoInfo" style="display: none;">
                     <div class="video-info-item">
-                        <span class="video-info-label">File:</span>
-                        <span id="infoFileName">-</span>
+                        <span class="video-info-label">Device:</span>
+                        <span id="infoDeviceId">-</span>
                     </div>
                     <div class="video-info-item">
-                        <span class="video-info-label">Size:</span>
-                        <span id="infoFileSize">-</span>
+                        <span class="video-info-label">Channel:</span>
+                        <span id="infoChannel">-</span>
                     </div>
                     <div class="video-info-item">
-                        <span class="video-info-label">Modified:</span>
-                        <span id="infoFileDate">-</span>
+                        <span class="video-info-label">Time Range:</span>
+                        <span id="infoTimeRange">-</span>
+                    </div>
+                    <div class="video-info-item">
+                        <span class="video-info-label">Alarm Type:</span>
+                        <span id="infoAlarmType">-</span>
                     </div>
                 </div>
             </div>
@@ -290,20 +294,19 @@
     </div>
     
     <script>
-        let videoFiles = [];
+        let devices = [];
+        let currentDevice = null;
         let currentVideo = null;
         // Use the correct server port (2223) for API calls
-        // If you're serving HTML from a different port (like VS Code Live Server on 5500),
-        // the API calls will still go to the Python server on port 2223
-        const API_BASE = 'http://82.180.145.220:2223';
+        const API_BASE = window.location.protocol + '//' + window.location.hostname + ':2223';
         
-        async function loadVideoFiles() {
+        async function loadDevices() {
             try {
                 document.getElementById('serverStatus').textContent = 'Server: Loading...';
                 document.getElementById('serverStatus').classList.remove('active');
                 hideError();
                 
-                const response = await fetch(`${API_BASE}/api/videos`, {
+                const response = await fetch(`${API_BASE}/api/devices`, {
                     method: 'GET',
                     mode: 'cors',
                     cache: 'no-cache'
@@ -314,9 +317,9 @@
                 }
                 
                 const data = await response.json();
-                videoFiles = data.videos || [];
+                devices = data.devices || [];
                 
-                document.getElementById('fileCount').textContent = `Video Files: ${videoFiles.length}`;
+                document.getElementById('deviceCount').textContent = `Devices: ${devices.length}`;
                 document.getElementById('serverStatus').textContent = 'Server: Connected';
                 document.getElementById('serverStatus').classList.add('active');
                 
@@ -326,21 +329,19 @@
                     banner.style.display = 'none';
                 }
                 
-                renderFileList();
+                renderDeviceList();
             } catch (error) {
-                console.error('Error loading video files:', error);
+                console.error('Error loading devices:', error);
                 console.error('Error name:', error.name);
                 console.error('Error message:', error.message);
                 
                 // Detect connection refused/network errors
-                // Network errors from fetch() typically show as TypeError
                 const errorMessage = (error.message || String(error) || '').toLowerCase();
                 const errorName = (error.name || '').toLowerCase();
                 const errorString = String(error).toLowerCase();
                 
-                // Check for any connection-related error indicators
                 const isConnectionRefused = 
-                    errorName === 'typeerror' ||  // Most common for network errors
+                    errorName === 'typeerror' ||
                     errorMessage.includes('failed to fetch') ||
                     errorMessage.includes('networkerror') ||
                     errorMessage.includes('err_connection_refused') ||
@@ -352,12 +353,10 @@
                     errorString.includes('network') ||
                     errorString.includes('refused');
                 
-                // If it's a TypeError from fetch, it's almost certainly a connection error
                 if (errorName === 'typeerror' || isConnectionRefused) {
                     document.getElementById('serverStatus').textContent = 'Server: Offline';
                     document.getElementById('serverStatus').classList.remove('active');
                     
-                    // Show prominent banner
                     const banner = document.getElementById('serverOfflineBanner');
                     if (banner) {
                         banner.style.display = 'block';
@@ -365,7 +364,6 @@
                     
                     showServerOfflineError();
                 } else {
-                    // Hide banner for other errors
                     const banner = document.getElementById('serverOfflineBanner');
                     if (banner) {
                         banner.style.display = 'none';
@@ -373,15 +371,173 @@
                     document.getElementById('serverStatus').textContent = 'Server: Error';
                     document.getElementById('serverStatus').classList.remove('active');
                     const errorMsg = error.message || String(error);
-                    showError(`Failed to load video files: ${errorMsg}`);
-                    document.getElementById('fileList').innerHTML = 
-                        `<div class="error">Failed to load video files: ${escapeHtml(errorMsg)}</div>`;
+                    showError(`Failed to load devices: ${errorMsg}`);
+                    document.getElementById('deviceList').innerHTML = 
+                        `<div class="error">Failed to load devices: ${escapeHtml(errorMsg)}</div>`;
                 }
             }
         }
         
+        async function loadDeviceVideos(deviceId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/videos`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return data.videos || [];
+            } catch (error) {
+                console.error(`Error loading videos for device ${deviceId}:`, error);
+                return [];
+            }
+        }
+        
+        async function queryDeviceVideos(deviceId) {
+            try {
+                // Send video list query to device
+                const response = await fetch(`${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/videos`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    cache: 'no-cache'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Video query sent:', data);
+                
+                // Wait a bit for device to respond, then reload videos
+                setTimeout(async () => {
+                    const videos = await loadDeviceVideos(deviceId);
+                    renderDeviceVideos(deviceId, videos);
+                    // Also reload devices to update counts
+                    loadDevices();
+                }, 2000);
+            } catch (error) {
+                console.error(`Error querying videos for device ${deviceId}:`, error);
+                showError(`Failed to query videos: ${error.message}`);
+            }
+        }
+        
+        async function requestVideoDownload(deviceId, videoId, videoInfo) {
+            try {
+                const response = await fetch(`${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/videos/${videoId}/request`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    cache: 'no-cache'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Video download requested:', data);
+                
+                // Start streaming video
+                currentDevice = deviceId;
+                currentVideo = { ...videoInfo, id: videoId };
+                updateVideoInfo(videoInfo);
+                playDeviceVideo(deviceId, videoId);
+                
+            } catch (error) {
+                console.error('Error requesting video download:', error);
+                showError(`Failed to request video: ${error.message}`);
+            }
+        }
+        
+        function playDeviceVideo(deviceId, videoId) {
+            const video = document.getElementById('videoPlayer');
+            const noVideoMessage = document.getElementById('noVideoMessage');
+            
+            noVideoMessage.style.display = 'none';
+            video.style.display = 'block';
+            
+            // Stream video from device via stream manager
+            // The video is being streamed in real-time as it's received from device
+            // Use the stream endpoint which will provide the video chunks
+            const videoUrl = `${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/videos/${videoId}/stream`;
+            video.src = videoUrl;
+            video.load();
+            
+            video.onerror = () => {
+                showError(`Failed to load video from device ${deviceId}. Video may still be downloading from dashcam.`);
+                noVideoMessage.style.display = 'flex';
+                video.style.display = 'none';
+            };
+        }
+        
+        function renderDeviceList() {
+            const container = document.getElementById('deviceList');
+            
+            if (devices.length === 0) {
+                container.innerHTML = '<div class="loading">No devices connected. Waiting for dashcam devices...</div>';
+                return;
+            }
+            
+            // Render devices with their stored videos
+            container.innerHTML = devices.map(device => {
+                const hasVideos = device.stored_video_count > 0;
+                return `
+                    <div class="file-item" style="margin-bottom: 15px;">
+                        <div class="file-name" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>${escapeHtml(device.device_id)}</span>
+                            <span style="font-size: 11px; color: #666;">${device.authenticated ? '✓' : '○'}</span>
+                        </div>
+                        <div class="file-meta" style="margin-top: 5px;">
+                            IP: ${device.ip_address} | Videos: ${device.stored_video_count}
+                        </div>
+                        <button class="refresh-btn" onclick="queryDeviceVideos('${escapeHtml(device.device_id)}')" 
+                                style="width: 100%; margin-top: 8px; padding: 6px; font-size: 12px;">
+                            📋 Query Stored Videos
+                        </button>
+                        <div id="videos_${escapeHtml(device.device_id)}" style="margin-top: 10px; display: ${hasVideos ? 'block' : 'none'};">
+                            ${hasVideos ? '<div class="loading">Loading videos...</div>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Load videos for each device that has videos
+            devices.forEach(device => {
+                if (device.stored_video_count > 0) {
+                    loadDeviceVideos(device.device_id).then(videos => {
+                        renderDeviceVideos(device.device_id, videos);
+                    });
+                }
+            });
+        }
+        
+        function renderDeviceVideos(deviceId, videos) {
+            const container = document.getElementById(`videos_${deviceId}`);
+            if (!container) return;
+            
+            if (videos.length === 0) {
+                container.innerHTML = '<div style="font-size: 12px; color: #666; padding: 5px;">No stored videos available</div>';
+                return;
+            }
+            
+            container.innerHTML = videos.map(video => {
+                const timeRange = `${video.start_time} - ${video.end_time}`;
+                return `
+                    <div class="file-item" style="margin-top: 5px; padding: 8px; background: #f9f9f9; cursor: pointer;"
+                         onclick="requestVideoDownload('${escapeHtml(deviceId)}', ${video.id}, ${JSON.stringify(video).replace(/"/g, '&quot;')})">
+                        <div class="file-name" style="font-size: 13px;">
+                            Channel ${video.channel} - ${timeRange}
+                        </div>
+                        <div class="file-meta" style="font-size: 11px;">
+                            Alarm: 0x${video.alarm_type.toString(16)} | Type: ${video.video_type}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
         function showServerOfflineError() {
-            const container = document.getElementById('fileList');
+            const container = document.getElementById('deviceList');
             container.innerHTML = `
                 <div class="error" style="padding: 20px; text-align: center;">
                     <h3 style="margin-bottom: 15px; color: #c62828;">⚠️ Server is Not Running</h3>
@@ -396,97 +552,31 @@
                                 <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px; display: block; margin-top: 5px;">cd c:\\Mine\\Projects\\DASHCAM</code>
                             </li>
                             <li>Run the server:
-                                <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px; display: block; margin-top: 5px;">python start_video_server.py</code>
+                                <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px; display: block; margin-top: 5px;">python web_server.py</code>
                             </li>
                             <li>Or double-click <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px;">start_server.bat</code> (Windows)</li>
                         </ol>
                     </div>
                     <p style="font-size: 12px; color: #666; margin-top: 15px;">
-                        Once the server is running, click the "Refresh List" button above.
+                        Once the server is running, click the "Refresh" button above.
                     </p>
                 </div>
             `;
         }
         
-        function renderFileList() {
-            const container = document.getElementById('fileList');
-            
-            if (videoFiles.length === 0) {
-                container.innerHTML = '<div class="loading">No video files found.</div>';
-                return;
-            }
-            
-            container.innerHTML = videoFiles.map((file, index) => {
-                const isSelected = currentVideo && currentVideo.filename === file.filename;
-                return `
-                    <div class="file-item ${isSelected ? 'selected' : ''}" onclick="selectVideo(${index})">
-                        <div class="file-name">${escapeHtml(file.filename)}</div>
-                        <div class="file-meta">
-                            ${formatFileSize(file.size)} • ${formatDate(file.modified)}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        function selectVideo(index) {
-            if (index < 0 || index >= videoFiles.length) {
-                return;
-            }
-            
-            const file = videoFiles[index];
-            currentVideo = file;
-            
-            // Update UI
-            renderFileList();
-            hideError();
-            
-            // Show video info
-            document.getElementById('videoInfo').style.display = 'block';
-            document.getElementById('infoFileName').textContent = file.filename;
-            document.getElementById('infoFileSize').textContent = formatFileSize(file.size);
-            document.getElementById('infoFileDate').textContent = formatDate(file.modified);
-            
-            // Load video
-            const video = document.getElementById('videoPlayer');
-            const noVideoMessage = document.getElementById('noVideoMessage');
-            
-            // Hide no video message
-            noVideoMessage.style.display = 'none';
-            
-            // Set video source
-            const videoUrl = `${API_BASE}/api/video/${encodeURIComponent(file.filename)}`;
-            video.src = videoUrl;
-            
-            // Show video element
-            video.style.display = 'block';
-            
-            // Load video
-            video.load();
-            
-            // Handle errors
-            video.onerror = () => {
-                showError(`Failed to load video: ${file.filename}`);
-                noVideoMessage.style.display = 'flex';
-                video.style.display = 'none';
-            };
-        }
-        
-        function formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-        }
-        
-        function formatDate(dateString) {
-            if (!dateString) return 'Unknown';
+        function formatTime(bcdTime) {
+            // Format BCD time string (YYMMDDHHmmss) to readable format
+            if (!bcdTime || bcdTime.length !== 12) return bcdTime;
             try {
-                const date = new Date(dateString);
-                return date.toLocaleString();
+                const year = '20' + bcdTime.substring(0, 2);
+                const month = bcdTime.substring(2, 4);
+                const day = bcdTime.substring(4, 6);
+                const hour = bcdTime.substring(6, 8);
+                const minute = bcdTime.substring(8, 10);
+                const second = bcdTime.substring(10, 12);
+                return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
             } catch (e) {
-                return dateString;
+                return bcdTime;
             }
         }
         
@@ -507,17 +597,23 @@
             document.getElementById('errorMessage').style.display = 'none';
         }
         
-        // Load video files on page load
-        loadVideoFiles();
+        // Update video info display
+        function updateVideoInfo(videoInfo) {
+            if (!videoInfo) return;
+            
+            document.getElementById('videoInfo').style.display = 'block';
+            document.getElementById('infoDeviceId').textContent = currentDevice || '-';
+            document.getElementById('infoChannel').textContent = videoInfo.channel || '-';
+            document.getElementById('infoTimeRange').textContent = 
+                `${formatTime(videoInfo.start_time)} - ${formatTime(videoInfo.end_time)}`;
+            document.getElementById('infoAlarmType').textContent = `0x${(videoInfo.alarm_type || 0).toString(16)}`;
+        }
         
-        // Also show error message in the main error area if server is down
-        // This ensures the error is visible even if fileList isn't rendered yet
-        setTimeout(() => {
-            const serverStatus = document.getElementById('serverStatus');
-            if (serverStatus && serverStatus.textContent.includes('Offline')) {
-                showError('The video server is not running. Please start the server using start_server.bat or run: python start_video_server.py');
-            }
-        }, 500);
+        // Load devices on page load
+        loadDevices();
+        
+        // Auto-refresh devices every 10 seconds
+        setInterval(loadDevices, 10000);
     </script>
 </body>
 </html>

@@ -20,11 +20,13 @@ except ImportError as e:
     stream_manager = None
 
 try:
-    from server import start_jt808_server
+    from server import start_jt808_server, device_connections, connection_lock
 except ImportError as e:
     print(f"[WARNING] Failed to import server: {e}")
     print("[WARNING] JTT808 server will not start - only video file playback available")
     start_jt808_server = None
+    device_connections = {}
+    connection_lock = None
 
 WEB_PORT = 2223
 
@@ -47,6 +49,10 @@ else:
     print(f"[INFO] Using video directory: {VIDEO_DIR}")
 
 class StreamingHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        """Handle POST requests"""
+        self.do_GET()  # Route to do_GET for now, check command in handler
+    
     def do_GET(self):
         # Parse path and query string
         parsed_path = urllib.parse.urlparse(self.path)
@@ -67,6 +73,20 @@ class StreamingHandler(BaseHTTPRequestHandler):
         try:
             if base_path == '/' or base_path == '/index.html':
                 self.serve_index()
+            elif base_path == '/api/devices':
+                self.list_devices()
+            elif base_path.startswith('/api/devices/') and base_path.endswith('/videos'):
+                # /api/devices/{device_id}/videos
+                if self.command == 'POST':
+                    self.query_device_videos()
+                else:
+                    self.list_device_videos()
+            elif base_path.startswith('/api/devices/') and '/videos/' in base_path and '/request' in base_path:
+                # /api/devices/{device_id}/videos/{video_id}/request
+                self.request_device_video()
+            elif base_path.startswith('/api/devices/') and '/videos/' in base_path and '/stream' in base_path:
+                # /api/devices/{device_id}/videos/{video_id}/stream
+                self.stream_device_video()
             elif base_path == '/api/videos':
                 self.list_video_files()
             elif base_path.startswith('/api/video/'):
@@ -111,8 +131,257 @@ class StreamingHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_error(404, "index.html not found")
     
+    def list_devices(self):
+        """API endpoint to list connected devices"""
+        try:
+            if not connection_lock or not device_connections:
+                response = json.dumps({'devices': []})
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(response.encode())
+                return
+            
+            devices = []
+            with connection_lock:
+                for device_id, connections in device_connections.items():
+                    if connections:
+                        # Get first connection for device info
+                        conn = connections[0]
+                        device_info = {
+                            'device_id': device_id,
+                            'ip_address': conn.addr[0] if conn.addr else 'unknown',
+                            'connected': True,
+                            'authenticated': conn.authenticated,
+                            'video_list_received': conn.video_list_received if hasattr(conn, 'video_list_received') else False,
+                            'stored_video_count': len(conn.stored_videos) if hasattr(conn, 'stored_videos') else 0
+                        }
+                        devices.append(device_info)
+            
+            response = json.dumps({'devices': devices})
+            
+            print(f"[API] /api/devices - Returning {len(devices)} device(s)")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(response.encode())
+        except Exception as e:
+            print(f"[ERROR] Error in list_devices: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
+    def query_device_videos(self):
+        """API endpoint to query device for stored videos (POST)"""
+        try:
+            # Parse device_id from path: /api/devices/{device_id}/videos
+            parts = self.path.split('/')
+            if len(parts) < 5:
+                self.send_error(400, "Invalid path format. Expected: /api/devices/{device_id}/videos")
+                return
+            
+            device_id = urllib.parse.unquote(parts[3])
+            
+            if not connection_lock or not device_connections:
+                self.send_error(503, "Device connections not available")
+                return
+            
+            with connection_lock:
+                if device_id not in device_connections or not device_connections[device_id]:
+                    self.send_error(404, f"Device {device_id} not found")
+                    return
+                
+                conn = device_connections[device_id][0]
+                if not conn.conn:
+                    self.send_error(503, f"Device {device_id} connection lost")
+                    return
+                
+                # Send video list query to device
+                conn.query_video_list(device_id, conn.message_count)
+            
+            response = json.dumps({
+                'status': 'query_sent',
+                'device_id': device_id,
+                'message': 'Video list query sent to device. Videos will be available shortly.'
+            })
+            
+            print(f"[API] POST /api/devices/{device_id}/videos - Video list query sent")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(response.encode())
+        except Exception as e:
+            print(f"[ERROR] Error in query_device_videos: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
+    def list_device_videos(self):
+        """API endpoint to list stored videos for a device"""
+        try:
+            # Parse device_id from path: /api/devices/{device_id}/videos
+            parts = self.path.split('/')
+            if len(parts) < 5:
+                self.send_error(400, "Invalid path format. Expected: /api/devices/{device_id}/videos")
+                return
+            
+            device_id = urllib.parse.unquote(parts[3])
+            
+            if not connection_lock or not device_connections:
+                self.send_error(503, "Device connections not available")
+                return
+            
+            with connection_lock:
+                if device_id not in device_connections or not device_connections[device_id]:
+                    self.send_error(404, f"Device {device_id} not found")
+                    return
+                
+                conn = device_connections[device_id][0]
+                stored_videos = conn.stored_videos if hasattr(conn, 'stored_videos') else []
+            
+            # Format videos for response
+            videos = []
+            for video in stored_videos:
+                videos.append({
+                    'id': video.get('index', len(videos)),
+                    'channel': video.get('channel', 0),
+                    'start_time': video.get('start_time', ''),
+                    'end_time': video.get('end_time', ''),
+                    'alarm_type': video.get('alarm_type', 0),
+                    'video_type': video.get('video_type', 0)
+                })
+            
+            response = json.dumps({'device_id': device_id, 'videos': videos})
+            
+            print(f"[API] /api/devices/{device_id}/videos - Returning {len(videos)} stored video(s)")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(response.encode())
+        except Exception as e:
+            print(f"[ERROR] Error in list_device_videos: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
+    def request_device_video(self):
+        """API endpoint to request video download from device"""
+        try:
+            # Parse path: /api/devices/{device_id}/videos/{video_id}/request
+            parts = self.path.split('/')
+            if len(parts) < 7:
+                self.send_error(400, "Invalid path format. Expected: /api/devices/{device_id}/videos/{video_id}/request")
+                return
+            
+            device_id = urllib.parse.unquote(parts[3])
+            video_id = int(parts[5])
+            
+            if not connection_lock or not device_connections:
+                self.send_error(503, "Device connections not available")
+                return
+            
+            with connection_lock:
+                if device_id not in device_connections or not device_connections[device_id]:
+                    self.send_error(404, f"Device {device_id} not found")
+                    return
+                
+                conn = device_connections[device_id][0]
+                if not conn.conn:
+                    self.send_error(503, f"Device {device_id} connection lost")
+                    return
+                
+                stored_videos = conn.stored_videos if hasattr(conn, 'stored_videos') else []
+            
+            # Find video by ID
+            video = None
+            for v in stored_videos:
+                if v.get('index') == video_id:
+                    video = v
+                    break
+            
+            if not video:
+                self.send_error(404, f"Video {video_id} not found for device {device_id}")
+                return
+            
+            # Request video download
+            success = conn.request_video_download(device_id, conn.message_count, video)
+            
+            if success:
+                response = json.dumps({
+                    'status': 'requested',
+                    'device_id': device_id,
+                    'video_id': video_id,
+                    'message': 'Video download request sent to device'
+                })
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(response.encode())
+            else:
+                self.send_error(500, "Failed to send video download request")
+        except ValueError as e:
+            self.send_error(400, f"Invalid video_id: {e}")
+        except Exception as e:
+            print(f"[ERROR] Error in request_device_video: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
+    def stream_device_video(self):
+        """API endpoint to stream video as it's received from device"""
+        try:
+            # Parse path: /api/devices/{device_id}/videos/{video_id}/stream
+            parts = self.path.split('/')
+            if len(parts) < 7:
+                self.send_error(400, "Invalid path format. Expected: /api/devices/{device_id}/videos/{video_id}/stream")
+                return
+            
+            device_id = urllib.parse.unquote(parts[3])
+            video_id = int(parts[5])
+            
+            # Stream video chunks as they arrive from device
+            # This is a long-lived connection that streams video data
+            self.send_response(200)
+            self.send_header('Content-type', 'video/mp4')
+            self.send_header('Transfer-Encoding', 'chunked')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            # Get device connection
+            if not connection_lock or not device_connections:
+                self.wfile.write(b'Device not available')
+                return
+            
+            with connection_lock:
+                if device_id not in device_connections or not device_connections[device_id]:
+                    self.wfile.write(b'Device not found')
+                    return
+                
+                conn = device_connections[device_id][0]
+            
+            # Stream video chunks from download buffer
+            video_key = f"{device_id}_{video_id}"
+            # This is a simplified version - in production, you'd want proper chunking
+            # For now, we'll use the stream manager which handles real-time streaming
+            print(f"[API] Streaming video {video_id} from device {device_id}")
+            # The video is already being streamed via stream_manager in server.py
+            
+        except Exception as e:
+            print(f"[ERROR] Error in stream_device_video: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, f"Internal server error: {e}")
+    
     def list_video_files(self):
-        """API endpoint to list available video files"""
+        """API endpoint to list available video files (local files)"""
         try:
             videos = []
             

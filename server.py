@@ -21,7 +21,8 @@ import threading
 import os
 import sys
 import time
-from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT, MSG_ID_VIDEO_REALTIME_REQUEST, MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, MSG_ID_VIDEO_LIST_QUERY
+import struct
+from jt808_protocol import JT808Parser, MSG_ID_REGISTER, MSG_ID_HEARTBEAT, MSG_ID_TERMINAL_AUTH, MSG_ID_VIDEO_UPLOAD, MSG_ID_VIDEO_UPLOAD_INIT, MSG_ID_LOCATION_UPLOAD, MSG_ID_TERMINAL_RESPONSE, MSG_ID_TERMINAL_LOGOUT, MSG_ID_VIDEO_REALTIME_REQUEST, MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, MSG_ID_VIDEO_LIST_QUERY, MSG_ID_VIDEO_DOWNLOAD_REQUEST
 from video_streamer import stream_manager
 
 HOST = "0.0.0.0"
@@ -52,6 +53,12 @@ class DeviceHandler:
         # Raw data capture for unparseable data
         self.raw_data_buffer = bytearray()
         self.raw_data_count = 0
+        # Stored video list from device
+        self.stored_videos = []  # List of stored videos from device
+        self.video_list_received = False  # Track if video list has been received
+        # Stored video download tracking
+        self.video_downloads = {}  # video_id -> download state
+        self.video_download_buffers = {}  # video_id -> list of chunks
         
     def handle_message(self, msg, raw_message=None):
         """Handle parsed JTT 808/1078 messages"""
@@ -278,22 +285,72 @@ class DeviceHandler:
                 print(f"[LOCATION] Failed to parse location data from {phone}")
         
         # Handle video list response (0x1205 as response to 0x9205)
+        # Check if this is a video list response (small body, starts with video count)
         elif msg_id == MSG_ID_VIDEO_UPLOAD and hasattr(self, '_video_list_query_sent') and self._video_list_query_sent:
-            print(f"[VIDEO LIST] Video list response received from {phone}")
-            # Parse video list and then request video
-            if not self.video_request_sent:
-                print(f"[INFO] Video list received, now requesting real-time video...")
-                self.try_video_request(phone, msg_seq)
+            # Try to parse as video list first (if body is small and starts with count)
+            if len(body) >= 2 and len(body) < 1000:  # Video list is typically small
+                video_list = self.parser.parse_video_list_response(body)
+                if video_list and 'videos' in video_list:
+                    print(f"[VIDEO LIST] Video list response received from {phone}: {video_list['video_count']} videos")
+                    self.stored_videos = video_list['videos']
+                    self.video_list_received = True
+                    
+                    # Log video details
+                    for video in self.stored_videos:
+                        print(f"[VIDEO LIST]   Video {video['index']}: Channel={video['channel']}, "
+                              f"Time={video['start_time']} to {video['end_time']}, "
+                              f"Alarm=0x{video['alarm_type']:08X}, Type={video['video_type']}")
+                    
+                    # Send response acknowledgment
+                    response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_LIST_QUERY, 0)
+                    self.conn.send(response)
+                    print(f"[TX] Video list response acknowledged")
+                    return
+            
+            # If not a video list, treat as regular video data
+            print(f"[VIDEO LIST] Received 0x1205 but not a video list, treating as video data")
+            # Fall through to video upload handler
         
-        # Handle video upload (0x1205) - JTT 1078 (stored video)
+        # Handle video upload (0x1205) - JTT 1078 (stored video data)
+        # This is actual video data being uploaded from device storage
         elif msg_id == MSG_ID_VIDEO_UPLOAD:
-            print(f"[VIDEO] Video data received from {phone} (0x1205)")
+            # Check if this is a video list (small body, starts with count) or video data (large body, starts with channel/data_type)
+            if len(body) >= 2 and len(body) < 100 and not hasattr(self, '_video_download_in_progress'):
+                # Might be a video list response
+                video_list = self.parser.parse_video_list_response(body)
+                if video_list and 'videos' in video_list:
+                    print(f"[VIDEO LIST] Video list received from {phone}: {video_list['video_count']} videos")
+                    self.stored_videos = video_list['videos']
+                    self.video_list_received = True
+                    return
+            
+            # This is stored video data upload
+            print(f"[STORED VIDEO] Video data received from {phone} (0x1205)")
             video_info = self.parser.parse_video_data(body)
             if video_info:
                 channel = video_info['logic_channel']
                 video_data = video_info['video_data']
                 
-                # Add frame to stream manager
+                # Check if this is part of a stored video download
+                video_key = f"{phone}_{channel}_{video_info.get('time', '')}"
+                
+                if video_key in self.video_download_buffers:
+                    # Append to download buffer
+                    self.video_download_buffers[video_key].append(video_data)
+                    print(f"[STORED VIDEO] Chunk received: Channel={channel}, ChunkSize={len(video_data)} bytes, "
+                          f"TotalChunks={len(self.video_download_buffers[video_key])}")
+                else:
+                    # New video download, initialize buffer
+                    self.video_download_buffers[video_key] = [video_data]
+                    self.video_downloads[video_key] = {
+                        'device_id': phone,
+                        'channel': channel,
+                        'status': 'downloading',
+                        'start_time': time.time()
+                    }
+                    print(f"[STORED VIDEO] New video download started: Channel={channel}, FirstChunk={len(video_data)} bytes")
+                
+                # Stream to browser in real-time via stream manager
                 stream_manager.add_frame(
                     phone,
                     channel,
@@ -306,8 +363,37 @@ class DeviceHandler:
                     }
                 )
                 
-                print(f"[VIDEO] Channel={channel}, Size={len(video_data)} bytes, "
+                print(f"[STORED VIDEO] Channel={channel}, Size={len(video_data)} bytes, "
                       f"GPS=({video_info['latitude']:.6f}, {video_info['longitude']:.6f})")
+        
+        # Handle video upload initialization (0x1206)
+        elif msg_id == MSG_ID_VIDEO_UPLOAD_INIT:
+            print(f"[STORED VIDEO] Video upload initialization received from {phone} (0x1206)")
+            # Device is initiating a stored video upload
+            # Parse initialization message if needed
+            if len(body) >= 4:
+                channel = struct.unpack('>B', body[0:1])[0]
+                video_type = struct.unpack('>B', body[1:2])[0]
+                start_time_bytes = body[2:8] if len(body) >= 8 else body[2:]
+                start_time_str = ''.join([f'{b >> 4}{b & 0x0F}' for b in start_time_bytes[:6]])
+                
+                video_key = f"{phone}_{channel}_{start_time_str}"
+                self.video_downloads[video_key] = {
+                    'device_id': phone,
+                    'channel': channel,
+                    'status': 'initializing',
+                    'start_time': time.time(),
+                    'video_type': video_type
+                }
+                self.video_download_buffers[video_key] = []
+                self._video_download_in_progress = True
+                
+                print(f"[STORED VIDEO] Upload init: Channel={channel}, VideoType={video_type}, StartTime={start_time_str}")
+                
+                # Send acknowledgment
+                response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_UPLOAD_INIT, 0)
+                self.conn.send(response)
+                print(f"[TX] Video upload init acknowledged")
         
         # Handle real-time video data (0x9201, 0x9202, 0x9206, 0x9207) - JTT 1078
         # Note: 0x9202 can be either:
@@ -495,6 +581,65 @@ class DeviceHandler:
             print(f"[TX] Video list query (0x9205) sent to {phone}")
         except Exception as e:
             print(f"[ERROR] Failed to send video list query: {e}")
+    
+    def request_video_download(self, phone, msg_seq, video_info):
+        """
+        Request stored video download from device (0x9102)
+        
+        Args:
+            phone: Device phone number
+            msg_seq: Message sequence number
+            video_info: Dictionary with video metadata (channel, start_time, end_time, alarm_type, video_type)
+        """
+        try:
+            if not self.conn:
+                print(f"[ERROR] Cannot request video download: no connection")
+                return False
+            
+            channel = video_info.get('channel', 1)
+            start_time = video_info.get('start_time', '')
+            end_time = video_info.get('end_time', '')
+            alarm_type = video_info.get('alarm_type', 0)
+            video_type = video_info.get('video_type', 0)
+            storage_type = video_info.get('storage_type', 0)
+            
+            if not start_time or not end_time:
+                print(f"[ERROR] Start time and end time required for video download")
+                return False
+            
+            download_request = self.parser.build_video_download_request(
+                phone=phone,
+                msg_seq=msg_seq + 1,
+                channel=channel,
+                start_time=start_time,
+                end_time=end_time,
+                alarm_type=alarm_type,
+                video_type=video_type,
+                storage_type=storage_type
+            )
+            
+            self.conn.send(download_request)
+            
+            # Mark download as in progress
+            video_key = f"{phone}_{channel}_{start_time}"
+            self.video_downloads[video_key] = {
+                'device_id': phone,
+                'channel': channel,
+                'status': 'requested',
+                'start_time': time.time(),
+                'video_info': video_info
+            }
+            self.video_download_buffers[video_key] = []
+            self._video_download_in_progress = True
+            
+            print(f"[TX] Video download request (0x9102) sent to {phone}: Channel={channel}, "
+                  f"Time={start_time} to {end_time}")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to send video download request: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def try_video_request_after_location(self, phone, msg_seq):
         """Try sending video request after location data (delayed)"""

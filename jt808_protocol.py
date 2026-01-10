@@ -35,6 +35,7 @@ MSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general comman
 
 # JTT 1078 Video Message IDs
 MSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request
+MSG_ID_VIDEO_DOWNLOAD_REQUEST = 0x9102  # Stored Video Download Request
 MSG_ID_VIDEO_UPLOAD = 0x1205
 MSG_ID_VIDEO_UPLOAD_INIT = 0x1206
 MSG_ID_VIDEO_DATA = 0x9201
@@ -337,6 +338,20 @@ class JT808Parser:
         body = struct.pack('>B', result_code)  # Result code (0=success)
         return self.build_response(MSG_ID_LOGOUT_RESPONSE, phone, msg_seq, body)
     
+    def build_terminal_response(self, phone, msg_seq, reply_id, result_code=0):
+        """
+        Build terminal general response (0x0001)
+        
+        JTT808 Protocol Format (Message Body):
+        - Bytes 0-1: Reply serial number (2 bytes, big-endian)
+        - Bytes 2-3: Reply message ID (2 bytes, big-endian)
+        - Byte 4: Result code (1 byte): 0=success, 1=failure, 2=message error, 3=not supported
+        """
+        body = struct.pack('>H', msg_seq)  # Reply serial (use current message sequence)
+        body += struct.pack('>H', reply_id)  # Reply message ID
+        body += struct.pack('>B', result_code)  # Result code
+        return self.build_response(MSG_ID_TERMINAL_RESPONSE, phone, msg_seq, body)
+    
     def build_video_realtime_request(self, phone, msg_seq, server_ip, tcp_port, udp_port, 
                                      channel=1, data_type=1, stream_type=0):
         """
@@ -454,6 +469,84 @@ class JT808Parser:
         
         return self.build_response(MSG_ID_VIDEO_LIST_QUERY, phone, msg_seq, body)
     
+    def build_video_download_request(self, phone, msg_seq, channel, start_time, end_time, 
+                                     alarm_type=0, video_type=0, storage_type=0):
+        """
+        Build stored video download request (0x9102)
+        
+        JTT1078 Protocol Format (Message Body):
+        - Byte 0: Channel number (1 byte)
+        - Bytes 1-6: Start time (6 bytes BCD format: YYMMDDHHmmss)
+        - Bytes 7-12: End time (6 bytes BCD format: YYMMDDHHmmss)
+        - Bytes 13-16: Alarm type (4 bytes, big-endian)
+        - Byte 17: Video type (1 byte)
+        - Byte 18: Storage type (1 byte)
+        
+        Args:
+            phone: Device phone number
+            msg_seq: Message sequence number
+            channel: Logical channel number
+            start_time: Start time string (YYMMDDHHmmss) or BCD bytes
+            end_time: End time string (YYMMDDHHmmss) or BCD bytes
+            alarm_type: Alarm type (4 bytes, default=0)
+            video_type: Video type (1 byte, default=0)
+            storage_type: Storage type (1 byte, default=0)
+        """
+        import binascii
+        
+        body = bytearray()
+        
+        # Byte 0: Channel number
+        body.extend(struct.pack('>B', channel))
+        print(f"[PROTOCOL 0x9102] Field 0: Channel = {channel} (0x{channel:02X})")
+        
+        # Bytes 1-6: Start time (BCD format: YYMMDDHHmmss)
+        if isinstance(start_time, str):
+            # Convert YYMMDDHHmmss string to BCD bytes
+            if len(start_time) == 12:
+                # Convert each pair of digits to BCD byte
+                start_time_bytes = bytes([int(start_time[i]) * 16 + int(start_time[i+1]) for i in range(0, 12, 2)])
+            else:
+                raise ValueError(f"Start time string must be 12 digits (YYMMDDHHmmss), got: {start_time}")
+        else:
+            start_time_bytes = start_time[:6] if len(start_time) >= 6 else start_time + b'\x00' * (6 - len(start_time))
+        
+        body.extend(start_time_bytes)
+        print(f"[PROTOCOL 0x9102] Field 1: Start time = {start_time_bytes.hex()}")
+        
+        # Bytes 7-12: End time (BCD format: YYMMDDHHmmss)
+        if isinstance(end_time, str):
+            # Convert YYMMDDHHmmss string to BCD bytes
+            if len(end_time) == 12:
+                # Convert each pair of digits to BCD byte
+                end_time_bytes = bytes([int(end_time[i]) * 16 + int(end_time[i+1]) for i in range(0, 12, 2)])
+            else:
+                raise ValueError(f"End time string must be 12 digits (YYMMDDHHmmss), got: {end_time}")
+        else:
+            end_time_bytes = end_time[:6] if len(end_time) >= 6 else end_time + b'\x00' * (6 - len(end_time))
+        
+        body.extend(end_time_bytes)
+        print(f"[PROTOCOL 0x9102] Field 2: End time = {end_time_bytes.hex()}")
+        
+        # Bytes 13-16: Alarm type (4 bytes, big-endian)
+        body.extend(struct.pack('>I', alarm_type))
+        print(f"[PROTOCOL 0x9102] Field 3: Alarm type = {alarm_type} (0x{alarm_type:08X})")
+        
+        # Byte 17: Video type
+        body.extend(struct.pack('>B', video_type))
+        print(f"[PROTOCOL 0x9102] Field 4: Video type = {video_type} (0x{video_type:02X})")
+        
+        # Byte 18: Storage type
+        body.extend(struct.pack('>B', storage_type))
+        print(f"[PROTOCOL 0x9102] Field 5: Storage type = {storage_type} (0x{storage_type:02X})")
+        
+        # Log complete body structure
+        body_bytes = bytes(body)
+        print(f"[PROTOCOL 0x9102] Complete body: {len(body_bytes)} bytes, hex: {binascii.hexlify(body_bytes).decode()}")
+        print(f"[PROTOCOL 0x9102] Body structure: [Channel(1)][StartTime(6)][EndTime(6)][AlarmType(4)][VideoType(1)][StorageType(1)]")
+        
+        return self.build_response(MSG_ID_VIDEO_DOWNLOAD_REQUEST, phone, msg_seq, body_bytes)
+    
     def build_video_control_command(self, phone, msg_seq, control_type, channel, data_type=0xFF, stream_type=0xFF):
         """
         Build video control command (0x9202)
@@ -532,8 +625,88 @@ class JT808Parser:
         
         return self.build_response(MSG_ID_VIDEO_DATA_CONTROL, phone, msg_seq, body_bytes)
     
+    def parse_video_list_response(self, body):
+        """
+        Parse JTT 1078 video list response (0x1205 as response to 0x9205)
+        
+        JTT1078 Protocol Format (Message Body):
+        - Bytes 0-1: Video count (2 bytes, big-endian)
+        - For each video (18 bytes):
+          - Byte 0: Channel number (1 byte)
+          - Bytes 1-6: Start time (6 bytes BCD: YYMMDDHHmmss)
+          - Bytes 7-12: End time (6 bytes BCD: YYMMDDHHmmss)
+          - Bytes 13-16: Alarm type (4 bytes, big-endian)
+          - Byte 17: Video type (1 byte)
+          - Bytes 18-21: File size (4 bytes, big-endian) - wait, that's 22 bytes per video
+        Actually, per JTT1078 standard:
+        - Video count: 2 bytes
+        - Each video entry: 18 bytes
+          - Channel: 1 byte
+          - Start time: 6 bytes BCD
+          - End time: 6 bytes BCD
+          - Alarm type: 4 bytes
+          - Video type: 1 byte
+        Total per video: 18 bytes
+        
+        Returns: List of video dictionaries or None if parsing fails
+        """
+        if len(body) < 2:
+            return None
+        
+        try:
+            # Parse video count
+            video_count = struct.unpack('>H', body[0:2])[0]
+            
+            # Each video entry is 18 bytes
+            videos = []
+            offset = 2
+            
+            for i in range(video_count):
+                if offset + 18 > len(body):
+                    print(f"[PROTOCOL] Warning: Incomplete video list, expected {video_count} videos but only {len(videos)} complete")
+                    break
+                
+                # Parse video entry
+                channel = struct.unpack('>B', body[offset:offset+1])[0]
+                
+                # Parse start time (BCD: YYMMDDHHmmss)
+                start_time_bytes = body[offset+1:offset+7]
+                start_time_str = ''.join([f'{b >> 4}{b & 0x0F}' for b in start_time_bytes])
+                
+                # Parse end time (BCD: YYMMDDHHmmss)
+                end_time_bytes = body[offset+7:offset+13]
+                end_time_str = ''.join([f'{b >> 4}{b & 0x0F}' for b in end_time_bytes])
+                
+                # Parse alarm type
+                alarm_type = struct.unpack('>I', body[offset+13:offset+17])[0]
+                
+                # Parse video type
+                video_type = struct.unpack('>B', body[offset+17:offset+18])[0]
+                
+                videos.append({
+                    'channel': channel,
+                    'start_time': start_time_str,
+                    'end_time': end_time_str,
+                    'alarm_type': alarm_type,
+                    'video_type': video_type,
+                    'index': i
+                })
+                
+                offset += 18
+            
+            print(f"[PROTOCOL] Parsed video list: {len(videos)} videos")
+            return {
+                'video_count': len(videos),
+                'videos': videos
+            }
+        except Exception as e:
+            print(f"[ERROR] Failed to parse video list response: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
     def parse_video_data(self, body):
-        """Parse JTT 1078 video data message"""
+        """Parse JTT 1078 video data message (0x1205 video upload)"""
         if len(body) < 36:
             return None
         
