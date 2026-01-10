@@ -65,6 +65,10 @@ class DeviceHandler:
         # Stored video download tracking
         self.video_downloads = {}  # video_id -> download state
         self.video_download_buffers = {}  # video_id -> list of chunks
+        # Video list query tracking (for cooldown)
+        self._video_list_query_attempted = None  # Timestamp of last query attempt
+        self._video_list_query_cooldown = 30.0  # Cooldown in seconds between queries
+        self._location_message_count = 0  # Count location messages received
         
     def handle_message(self, msg, raw_message=None):
         """Handle parsed JTT 808/1078 messages"""
@@ -146,6 +150,31 @@ class DeviceHandler:
                 ip_connections[device_ip].append(self)
                 
                 print(f"[CONN] Device {phone} (IP: {device_ip}) now has {len(device_connections[phone])} connection(s) by ID, {len(ip_connections[device_ip])} by IP")
+                
+                # Set device_id if not already set (device identified from phone number in message)
+                was_new_device = self.device_id is None
+                if self.device_id is None:
+                    self.device_id = phone
+                    print(f"[CONN] Device ID set to {phone} from message")
+                    
+                    # Query video list after device is identified (if not already received)
+                    if was_new_device and not self.video_list_received:
+                        print(f"[AUTO QUERY] Device {phone} identified, will query video list after short delay...")
+                        def query_after_identification():
+                            time.sleep(1.5)  # Wait 1.5 seconds for device to be ready
+                            if self.conn and self.device_id == phone and not self.video_list_received:
+                                # Check cooldown
+                                if (self._video_list_query_attempted is None or 
+                                    (time.time() - self._video_list_query_attempted) >= self._video_list_query_cooldown):
+                                    print(f"[AUTO QUERY] Sending video list query to identified device {phone}")
+                                    self._video_list_query_attempted = time.time()
+                                    self.query_video_list(phone, self.message_count)
+                                else:
+                                    print(f"[AUTO QUERY] Cooldown active, skipping query")
+                            else:
+                                print(f"[AUTO QUERY] Device state changed, skipping query")
+                        
+                        threading.Thread(target=query_after_identification, daemon=True).start()
                 
                 # Alert if multiple connections from same IP
                 if len(ip_connections[device_ip]) > 1:
@@ -242,10 +271,24 @@ class DeviceHandler:
         # - Bytes 46+: License plate number (variable, ASCII)
         elif msg_id == MSG_ID_REGISTER:
             print(f"[+] Device registration from {phone}")
+            was_new_device = self.device_id is None
             self.device_id = phone
             response = self.parser.build_register_response(phone, msg_seq, 0)
             self.conn.send(response)
             print(f"[TX] Registration response sent")
+            
+            # Query video list after registration (device is now identified)
+            if was_new_device:
+                print(f"[AUTO QUERY] New device {phone} registered, will query video list after short delay...")
+                def query_after_registration():
+                    time.sleep(2.0)  # Wait 2 seconds for device to be ready
+                    if self.conn and self.device_id == phone and not self.video_list_received:
+                        print(f"[AUTO QUERY] Sending video list query to newly registered device {phone}")
+                        self.query_video_list(phone, self.message_count)
+                    else:
+                        print(f"[AUTO QUERY] Device state changed, skipping query")
+                
+                threading.Thread(target=query_after_registration, daemon=True).start()
         
         # Handle heartbeat (0x0002)
         elif msg_id == MSG_ID_HEARTBEAT:
@@ -318,6 +361,43 @@ class DeviceHandler:
                 response = self.parser.build_location_response(phone, msg_seq, 0)
                 self.conn.send(response)
                 print(f"[TX] Location response sent")
+                
+                # Increment location message count
+                self._location_message_count += 1
+                
+                # Query video list if device is active but list not received
+                # This works even without authentication (some devices don't authenticate)
+                can_query = (
+                    self.device_id and  # Device is identified
+                    not self.video_list_received and  # Haven't received video list yet
+                    self.conn  # Connection is still active
+                )
+                
+                # Check cooldown
+                query_allowed = True
+                if self._video_list_query_attempted is not None:
+                    elapsed = time.time() - self._video_list_query_attempted
+                    if elapsed < self._video_list_query_cooldown:
+                        query_allowed = False
+                        print(f"[AUTO QUERY] Cooldown active: {elapsed:.1f}s since last query (need {self._video_list_query_cooldown}s)")
+                
+                # Query after a few location messages (device is clearly active)
+                # Or if enough time has passed since last query
+                if can_query and query_allowed:
+                    # Query after 2-3 location messages to ensure device is active
+                    if self._location_message_count >= 2:
+                        print(f"[AUTO QUERY] Device {phone} is active ({self._location_message_count} location messages), querying video list...")
+                        self._video_list_query_attempted = time.time()
+                        
+                        def query_after_delay():
+                            time.sleep(0.5)  # Small delay to ensure device is ready
+                            if self.conn and self.device_id:
+                                print(f"[AUTO QUERY] Sending video list query to active device {phone}")
+                                self.query_video_list(phone, self.message_count)
+                            else:
+                                print(f"[AUTO QUERY] Connection lost, skipping query")
+                        
+                        threading.Thread(target=query_after_delay, daemon=True).start()
                 
                 # Try sending video request after location data (some devices need this)
                 if not self.video_request_sent and self.authenticated:
@@ -782,9 +862,16 @@ class DeviceHandler:
             traceback.print_exc()
     
     def query_video_list(self, phone, msg_seq):
-        """Query video list from device (0x9205)"""
+        """
+        Query video list from device (0x9205)
+        
+        Note: This method does NOT require authentication. Some devices allow
+        video list queries without authentication, especially if they're already
+        connected and sending location data.
+        """
         try:
             print(f"[VIDEO LIST QUERY] Starting video list query for device {phone}, msg_seq={msg_seq}")
+            print(f"[VIDEO LIST QUERY] Authentication status: {self.authenticated} (not required for query)")
             
             if not self.conn:
                 print(f"[VIDEO LIST QUERY] ERROR: No connection available for device {phone}")
