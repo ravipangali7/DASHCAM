@@ -420,7 +420,7 @@
         "kind": 2,
         "importPath": "server",
         "description": "server",
-        "peekOfCode": "def handle_udp_video_packet(data, addr, port=None):\n    \"\"\"Handle UDP video packets with enhanced analysis\"\"\"\n    try:\n        # Enhanced UDP logging with size analysis\n        packet_size = len(data)\n        print(f\"[UDP] Received {packet_size} bytes from {addr} on port {port or 'default'}\")\n        # Analyze packet size (video packets are typically larger)\n        if packet_size > 500:\n            print(f\"[UDP] ⚠️ Large packet ({packet_size} bytes) - likely video data!\")\n        # Show hex dump for small packets or first bytes of large packets",
+        "peekOfCode": "def handle_udp_video_packet(data, addr, port=None):\n    \"\"\"Handle UDP video packets with enhanced analysis\"\"\"\n    try:\n        # Enhanced UDP logging with size analysis\n        packet_size = len(data)\n        device_ip = addr[0]\n        print(f\"[UDP] Received {packet_size} bytes from {addr} on port {port or 'default'}\")\n        # Try to find associated device ID from IP address\n        device_id = None\n        with connection_lock:",
         "detail": "server",
         "documentation": {}
     },

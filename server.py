@@ -89,6 +89,17 @@ class DeviceHandler:
             device_ip = self.addr[0] if self.addr else 'unknown'
             
             with connection_lock:
+                # Check if there are existing connections from this IP that might have device info
+                existing_conns = ip_connections.get(device_ip, [])
+                for existing_conn in existing_conns:
+                    if existing_conn.device_id and existing_conn.device_id == phone:
+                        # Same device, share video request state
+                        if existing_conn.video_request_sent:
+                            self.video_request_sent = True
+                            self.video_request_attempts = existing_conn.video_request_attempts.copy()
+                            print(f"[CONN] Sharing video request state from existing connection for {phone}")
+                        break
+                
                 # Track by device ID
                 if phone not in device_connections:
                     device_connections[phone] = []
@@ -104,6 +115,11 @@ class DeviceHandler:
                 # Alert if multiple connections from same IP
                 if len(ip_connections[device_ip]) > 1:
                     print(f"[CONN] ⚠️ Multiple connections ({len(ip_connections[device_ip])}) from IP {device_ip} - might be separate video connection!")
+                    # Check if any existing connection has video packets
+                    for existing_conn in existing_conns:
+                        if existing_conn.video_packets_received:
+                            print(f"[CONN] Existing connection from {device_ip} has received video packets - this might be a control connection")
+                            break
         
         # Handle terminal general response (0x0001)
         if msg_id == MSG_ID_TERMINAL_RESPONSE:
@@ -115,37 +131,58 @@ class DeviceHandler:
                 
                 # If this is a response to video request (0x9101), send video control command
                 if reply_id == MSG_ID_VIDEO_REALTIME_REQUEST:
+                    elapsed = None
+                    if self.video_request_time:
+                        elapsed = time.time() - self.video_request_time
+                        print(f"[VIDEO FLOW] Video request response received {elapsed:.2f} seconds after request")
+                    
                     if response_info['result_text'] != 'Success/Confirmation':
                         print(f"[WARNING] Video request was not successful, result: {response_info['result_text']}")
                     else:
-                        print(f"[INFO] Video request acknowledged successfully, sending video control command...")
+                        print(f"[VIDEO FLOW] ✓ Video request (0x9101) acknowledged successfully")
+                        print(f"[VIDEO FLOW] → Next step: Sending video control command (0x9202)...")
+                        
                         # Send video control command (0x9202) to start video streaming
                         if self.conn and not self.video_control_sent:
                             # Get channel from last video request attempt
                             channel = 1  # Default channel
                             if self.video_request_attempts:
-                                channel = self.video_request_attempts[-1].get('channel', 1)
+                                last_attempt = self.video_request_attempts[-1]
+                                channel = last_attempt.get('channel', 1)
+                                print(f"[VIDEO FLOW] Using channel={channel} from last video request attempt")
                             
                             # Send control command to start video (control_type=1: Switch code stream)
                             self.send_video_control_command(phone, msg_seq, channel, control_type=1)
+                        else:
+                            if not self.conn:
+                                print(f"[VIDEO FLOW] ⚠️ Cannot send control command: no connection")
+                            elif self.video_control_sent:
+                                print(f"[VIDEO FLOW] ⚠️ Control command already sent, skipping")
                         
                         # Send a keep-alive heartbeat to maintain connection
                         if self.conn:
                             try:
                                 heartbeat = self.parser.build_heartbeat_response(phone, msg_seq + 1)
                                 self.conn.send(heartbeat)
-                                print(f"[TX] Sent keep-alive heartbeat after video acknowledgment")
-                            except:
-                                pass
+                                print(f"[VIDEO FLOW] Sent keep-alive heartbeat after video acknowledgment")
+                            except Exception as e:
+                                print(f"[VIDEO FLOW] Failed to send heartbeat: {e}")
                 
                 # If this is a response to video control command (0x9202)
                 elif reply_id == MSG_ID_VIDEO_DATA_CONTROL:
+                    elapsed = None
+                    if self.video_control_time:
+                        elapsed = time.time() - self.video_control_time
+                        print(f"[VIDEO FLOW] Control command response received {elapsed:.2f} seconds after command")
+                    
                     if response_info['result_text'] != 'Success/Confirmation':
                         print(f"[WARNING] Video control command was not successful, result: {response_info['result_text']}")
                     else:
-                        print(f"[INFO] Video control command acknowledged successfully, waiting for video packets...")
+                        print(f"[VIDEO FLOW] ✓ Video control command (0x9202) acknowledged successfully")
+                        print(f"[VIDEO FLOW] → Next step: Waiting for video data packets (0x9201)...")
                         self.video_control_time = time.time()
                         # Now device should start sending video data (0x9201)
+                        print(f"[VIDEO FLOW] Monitoring for video packets on TCP connection and UDP port {JT808_PORT}")
             else:
                 print(f"[RESPONSE] Failed to parse terminal response from {phone}")
                 print(f"[RESPONSE] Body hex: {binascii.hexlify(body).decode()}")
@@ -274,74 +311,102 @@ class DeviceHandler:
         
         # Handle real-time video data (0x9201, 0x9202, 0x9206, 0x9207) - JTT 1078
         # Note: 0x9202 can be either:
-        # - Video control command (when sent TO device to start/stop video)
-        # - Video data message (when received FROM device with video data)
+        # - Video control command (when sent TO device to start/stop video) - 4 bytes
+        # - Video data message (when received FROM device with video data) - 13+ bytes
         # This handler processes 0x9202 as video data when received from device
         elif msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, 0x9206, 0x9207]:
-            # Mark that we've received video packets
-            if not self.video_packets_received:
-                self.video_packets_received = True
-                if self.video_request_time:
-                    elapsed = time.time() - self.video_request_time
-                    print(f"[VIDEO] ✓✓✓ FIRST VIDEO PACKET RECEIVED after {elapsed:.2f} seconds! ✓✓✓")
-            
-            print(f"[VIDEO] ✓ Real-time video data received from {phone} (0x{msg_id:04X})")
-            video_info = self.parse_realtime_video_data(body, msg_id)
-            if video_info:
-                channel = video_info['logic_channel']
-                package_type = video_info.get('package_type', 1)
-                video_data = video_info['video_data']
-                timestamp = video_info.get('timestamp', '')
-                
-                # Use timestamp as frame ID for reassembly
-                frame_id = timestamp if timestamp else f"{msg_seq}_{channel}"
-                frame_key = (channel, frame_id)
-                
-                # Handle frame reassembly for multi-packet frames
-                if package_type == 0:  # Frame start
-                    self.video_frame_buffers[frame_key] = [video_data]
-                    print(f"[VIDEO] Frame START - Channel={channel}, FrameID={frame_id}, Size={len(video_data)} bytes")
-                elif package_type == 1:  # Frame continuation
-                    if frame_key in self.video_frame_buffers:
-                        self.video_frame_buffers[frame_key].append(video_data)
-                        print(f"[VIDEO] Frame CONTINUE - Channel={channel}, FrameID={frame_id}, PacketSize={len(video_data)} bytes")
-                    else:
-                        # Start new frame if we missed the start packet
-                        self.video_frame_buffers[frame_key] = [video_data]
-                        print(f"[VIDEO] Frame CONTINUE (missed start) - Channel={channel}, FrameID={frame_id}")
-                elif package_type == 2:  # Frame end
-                    if frame_key in self.video_frame_buffers:
-                        self.video_frame_buffers[frame_key].append(video_data)
-                        # Reassemble complete frame
-                        complete_frame = b''.join(self.video_frame_buffers[frame_key])
-                        del self.video_frame_buffers[frame_key]
-                        print(f"[VIDEO] Frame END - Channel={channel}, FrameID={frame_id}, TotalSize={len(complete_frame)} bytes")
-                        video_data = complete_frame
-                    else:
-                        # Frame end without start/continuation, use as single packet
-                        print(f"[VIDEO] Frame END (single packet) - Channel={channel}, Size={len(video_data)} bytes")
-                
-                # Only add to stream manager if we have complete frame or single packet
-                if package_type == 2 or (package_type == 0 and len(video_data) > 0):
-                    # Add frame to stream manager
-                    stream_manager.add_frame(
-                        phone,
-                        channel,
-                        video_data,
-                        {
-                            'latitude': video_info.get('latitude', 0.0),
-                            'longitude': video_info.get('longitude', 0.0),
-                            'speed': video_info.get('speed', 0.0),
-                            'direction': video_info.get('direction', 0)
-                        }
-                    )
-                    
-                    print(f"[VIDEO] ✓ Frame added to stream - Device={phone}, Channel={channel}, "
-                          f"DataType={video_info.get('data_type', 'N/A')}, Size={len(video_data)} bytes")
+            # Check if 0x9202 is a control command (4 bytes) or video data (13+ bytes)
+            if msg_id == MSG_ID_VIDEO_DATA_CONTROL and len(body) == 4:
+                print(f"[VIDEO] Received 0x9202 control command response (4 bytes) - not video data")
+                # This might be a response to our control command, or device sending control back
+                # Don't treat as video data
             else:
-                print(f"[VIDEO] ✗ Failed to parse video data from {phone}")
+                # This is actual video data
+                # Mark that we've received video packets
+                if not self.video_packets_received:
+                    self.video_packets_received = True
+                    if self.video_request_time:
+                        elapsed = time.time() - self.video_request_time
+                        print(f"[VIDEO] ✓✓✓ FIRST VIDEO PACKET RECEIVED after {elapsed:.2f} seconds! ✓✓✓")
+                    if self.video_control_time:
+                        elapsed = time.time() - self.video_control_time
+                        print(f"[VIDEO] First packet received {elapsed:.2f} seconds after control command")
+                
+                print(f"[VIDEO] ✓✓✓ Real-time video data received from {phone} (0x{msg_id:04X}) ✓✓✓")
+                print(f"[VIDEO] Body length: {len(body)} bytes")
+                
+                # Show first few bytes for debugging
                 if len(body) > 0:
-                    print(f"[VIDEO] Body hex (first 50 bytes): {binascii.hexlify(body[:50]).decode()}")
+                    hex_preview = binascii.hexlify(body[:min(20, len(body))]).decode()
+                    formatted_hex = ' '.join([hex_preview[i:i+2] for i in range(0, len(hex_preview), 2)])
+                    print(f"[VIDEO] First bytes: {formatted_hex}")
+                
+                video_info = self.parse_realtime_video_data(body, msg_id)
+                if video_info:
+                    channel = video_info['logic_channel']
+                    package_type = video_info.get('package_type', 1)
+                    video_data = video_info['video_data']
+                    timestamp = video_info.get('timestamp', '')
+                    data_type = video_info.get('data_type', 'N/A')
+                    
+                    data_type_names = {0: 'I-frame', 1: 'P-frame', 2: 'B-frame', 3: 'Audio'}
+                    data_type_str = data_type_names.get(data_type, f'Unknown({data_type})')
+                    
+                    print(f"[VIDEO] Parsed: Channel={channel}, DataType={data_type_str}, "
+                          f"PackageType={package_type}, VideoSize={len(video_data)} bytes, Timestamp={timestamp}")
+                    
+                    # Use timestamp as frame ID for reassembly
+                    frame_id = timestamp if timestamp else f"{msg_seq}_{channel}"
+                    frame_key = (channel, frame_id)
+                    
+                    # Handle frame reassembly for multi-packet frames
+                    if package_type == 0:  # Frame start
+                        self.video_frame_buffers[frame_key] = [video_data]
+                        print(f"[VIDEO] Frame START - Channel={channel}, FrameID={frame_id}, Size={len(video_data)} bytes")
+                    elif package_type == 1:  # Frame continuation
+                        if frame_key in self.video_frame_buffers:
+                            self.video_frame_buffers[frame_key].append(video_data)
+                            print(f"[VIDEO] Frame CONTINUE - Channel={channel}, FrameID={frame_id}, PacketSize={len(video_data)} bytes")
+                        else:
+                            # Start new frame if we missed the start packet
+                            self.video_frame_buffers[frame_key] = [video_data]
+                            print(f"[VIDEO] Frame CONTINUE (missed start) - Channel={channel}, FrameID={frame_id}")
+                    elif package_type == 2:  # Frame end
+                        if frame_key in self.video_frame_buffers:
+                            self.video_frame_buffers[frame_key].append(video_data)
+                            # Reassemble complete frame
+                            complete_frame = b''.join(self.video_frame_buffers[frame_key])
+                            del self.video_frame_buffers[frame_key]
+                            print(f"[VIDEO] Frame END - Channel={channel}, FrameID={frame_id}, TotalSize={len(complete_frame)} bytes")
+                            video_data = complete_frame
+                        else:
+                            # Frame end without start/continuation, use as single packet
+                            print(f"[VIDEO] Frame END (single packet) - Channel={channel}, Size={len(video_data)} bytes")
+                    
+                    # Only add to stream manager if we have complete frame or single packet
+                    if package_type == 2 or (package_type == 0 and len(video_data) > 0):
+                        # Add frame to stream manager
+                        stream_manager.add_frame(
+                            phone,
+                            channel,
+                            video_data,
+                            {
+                                'latitude': video_info.get('latitude', 0.0),
+                                'longitude': video_info.get('longitude', 0.0),
+                                'speed': video_info.get('speed', 0.0),
+                                'direction': video_info.get('direction', 0)
+                            }
+                        )
+                        
+                        print(f"[VIDEO] ✓✓✓ Frame added to stream - Device={phone}, Channel={channel}, "
+                              f"DataType={data_type_str}, Size={len(video_data)} bytes ✓✓✓")
+                else:
+                    print(f"[VIDEO] ✗ Failed to parse video data from {phone}")
+                    print(f"[VIDEO] Body length: {len(body)} bytes")
+                    if len(body) > 0:
+                        hex_preview = binascii.hexlify(body[:min(50, len(body))]).decode()
+                        formatted_hex = ' '.join([hex_preview[i:i+2] for i in range(0, len(hex_preview), 2)])
+                        print(f"[VIDEO] Body hex (first 50 bytes): {formatted_hex}")
         
         else:
             print(f"[?] Unknown message ID: 0x{msg_id:04X} from {phone}")
@@ -483,17 +548,20 @@ class DeviceHandler:
                 )
                 if self.conn:
                     self.conn.send(video_request)
-                self.video_request_sent = True
-                self.video_request_time = time.time()
-                self.video_request_attempts.append(config)
-                print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, {config['desc']}")
-                hex_dump = binascii.hexlify(video_request).decode()
-                formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
-                print(f"[TX HEX] Complete message: {formatted_hex}")
-                print(f"[TX STRUCT] Message structure: [7E][ID=9101(2)][Attr(2)][Phone={phone}(6)][Seq(2)][Body(12)][Checksum(1)][7E]")
-                
-                # Start a thread to check if video arrives, if not try alternative configs
-                threading.Thread(target=self.check_video_and_retry, args=(phone, msg_seq, server_ip, video_port, configs_to_try[1:]), daemon=True).start()
+                    self.video_request_sent = True
+                    self.video_request_time = time.time()
+                    self.video_request_attempts.append(config)
+                    print(f"[VIDEO FLOW] → Step 1: Video streaming request (0x9101) sent to {phone}")
+                    print(f"[VIDEO FLOW]   Configuration: IP={server_ip}, Port={video_port}, {config['desc']}")
+                    hex_dump = binascii.hexlify(video_request).decode()
+                    formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+                    print(f"[TX HEX] Complete message: {formatted_hex}")
+                    print(f"[TX STRUCT] Message structure: [7E][ID=9101(2)][Attr(2)][Phone={phone}(6)][Seq(2)][Body(12)][Checksum(1)][7E]")
+                    
+                    # Start a thread to check if video arrives, if not try alternative configs
+                    threading.Thread(target=self.check_video_and_retry, args=(phone, msg_seq, server_ip, video_port, configs_to_try[1:]), daemon=True).start()
+                else:
+                    print(f"[VIDEO FLOW] ✗ Cannot send video request: no connection")
             except Exception as e:
                 print(f"[ERROR] Failed to send video request: {e}")
                 import traceback
@@ -505,28 +573,44 @@ class DeviceHandler:
     def check_video_and_retry(self, phone, msg_seq, server_ip, video_port, alternative_configs):
         """Check if video packets arrive, if not try alternative configurations"""
         # Wait 5 seconds to see if video packets arrive
-        time.sleep(5)
+        wait_time = 5
+        print(f"[VIDEO FLOW] Waiting {wait_time} seconds for video packets...")
+        time.sleep(wait_time)
         
-        if not self.video_packets_received and alternative_configs and self.conn:
-            print(f"[RETRY] No video packets received after 5 seconds, trying alternative configuration...")
-            config = alternative_configs[0]
-            try:
-                video_request = self.parser.build_video_realtime_request(
-                    phone=phone,
-                    msg_seq=msg_seq + len(self.video_request_attempts) + 1,
-                    server_ip=server_ip,
-                    tcp_port=video_port,
-                    udp_port=video_port,
-                    channel=config['channel'],
-                    data_type=config['data_type'],
-                    stream_type=config['stream_type']
-                )
-                self.conn.send(video_request)
-                self.video_request_attempts.append(config)
-                self.video_request_time = time.time()
-                print(f"[TX] Retry video request: {config['desc']}")
-            except Exception as e:
-                print(f"[ERROR] Failed to send retry video request: {e}")
+        if not self.video_packets_received:
+            print(f"[VIDEO FLOW] ⚠️ No video packets received after {wait_time} seconds")
+            print(f"[VIDEO FLOW] Checking connection status...")
+            print(f"[VIDEO FLOW] - Video request sent: {self.video_request_sent}")
+            print(f"[VIDEO FLOW] - Video control sent: {self.video_control_sent}")
+            print(f"[VIDEO FLOW] - Connection active: {self.conn is not None}")
+            
+            if alternative_configs and self.conn:
+                print(f"[VIDEO FLOW] → Trying alternative configuration...")
+                config = alternative_configs[0]
+                try:
+                    video_request = self.parser.build_video_realtime_request(
+                        phone=phone,
+                        msg_seq=msg_seq + len(self.video_request_attempts) + 1,
+                        server_ip=server_ip,
+                        tcp_port=video_port,
+                        udp_port=video_port,
+                        channel=config['channel'],
+                        data_type=config['data_type'],
+                        stream_type=config['stream_type']
+                    )
+                    self.conn.send(video_request)
+                    self.video_request_attempts.append(config)
+                    self.video_request_time = time.time()
+                    print(f"[VIDEO FLOW] Retry video request sent: {config['desc']}")
+                except Exception as e:
+                    print(f"[VIDEO FLOW] ✗ Failed to send retry video request: {e}")
+            else:
+                if not alternative_configs:
+                    print(f"[VIDEO FLOW] No more alternative configurations to try")
+                if not self.conn:
+                    print(f"[VIDEO FLOW] Connection lost, cannot retry")
+        else:
+            print(f"[VIDEO FLOW] ✓ Video packets are being received!")
     
     def detect_h264_patterns(self, data):
         """Detect H.264 NAL unit start codes in raw data"""
@@ -669,11 +753,19 @@ class DeviceHandler:
         """
         Validate video data message format against JTT1078 specification
         
+        Note: 0x9202 can be either a control command (4 bytes) or video data (13+ bytes)
+        This function only validates video data format, not control commands.
+        
         Returns: (is_valid, errors_list)
         """
         errors = []
         
-        # Minimum size: Channel(1) + DataType(1) + PackageType(1) + Timestamp(6) + Interval(2) + Size(2) = 13 bytes
+        # 0x9202 can be a control command (4 bytes) - skip validation for that
+        if msg_id == MSG_ID_VIDEO_DATA_CONTROL and len(body) == 4:
+            # This is a control command, not video data - validation not applicable
+            return (True, [])
+        
+        # Minimum size for video data: Channel(1) + DataType(1) + PackageType(1) + Timestamp(6) + Interval(2) + Size(2) = 13 bytes
         if len(body) < 13:
             errors.append(f"Body too short: {len(body)} bytes (minimum 13)")
             return (False, errors)
@@ -867,7 +959,17 @@ class DeviceHandler:
                         # Check if unparseable message contains video data
                         if self.check_raw_video_data(message):
                             print(f"[PARSE ERROR] ⚠️ Unparseable message contains H.264 video data!")
+                            print(f"[PARSE ERROR] Attempting to process as raw video...")
                             self.process_raw_h264_data(message)
+                        elif len(message) > 100:
+                            # Large unparseable messages might be video
+                            print(f"[PARSE ERROR] Large unparseable message ({len(message)} bytes) - checking for video patterns...")
+                            if self.detect_h264_patterns(message):
+                                print(f"[PARSE ERROR] ✓ H.264 pattern detected in unparseable message!")
+                                self.process_raw_h264_data(message)
+                            elif self.detect_rtp_header(message):
+                                print(f"[PARSE ERROR] ✓ RTP header detected in unparseable message!")
+                                self.process_rtp_packet(message)
                         
                         # Try to extract message ID manually for debugging
                         if len(message) >= 3:
@@ -919,30 +1021,52 @@ def handle_udp_video_packet(data, addr, port=None):
     try:
         # Enhanced UDP logging with size analysis
         packet_size = len(data)
+        device_ip = addr[0]
         print(f"[UDP] Received {packet_size} bytes from {addr} on port {port or 'default'}")
+        
+        # Try to find associated device ID from IP address
+        device_id = None
+        with connection_lock:
+            if device_ip in ip_connections:
+                for conn in ip_connections[device_ip]:
+                    if conn.device_id:
+                        device_id = conn.device_id
+                        break
+        
+        if device_id:
+            print(f"[UDP] Associated with device: {device_id}")
         
         # Analyze packet size (video packets are typically larger)
         if packet_size > 500:
             print(f"[UDP] ⚠️ Large packet ({packet_size} bytes) - likely video data!")
+        elif packet_size > 100:
+            print(f"[UDP] Medium packet ({packet_size} bytes) - possibly video data")
         
         # Show hex dump for small packets or first bytes of large packets
         if packet_size <= 100:
             hex_dump = binascii.hexlify(data).decode()
-            print(f"[UDP HEX] {hex_dump}")
+            formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+            print(f"[UDP HEX] {formatted_hex}")
         else:
             hex_dump = binascii.hexlify(data[:100]).decode()
-            print(f"[UDP HEX] First 100 bytes: {hex_dump}...")
+            formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+            print(f"[UDP HEX] First 100 bytes: {formatted_hex}...")
         
-        # Check for raw H.264 patterns
+        # Check for raw H.264 patterns first (most common for video)
         handler = DeviceHandler(None, addr)
         if handler.detect_h264_patterns(data):
             print(f"[UDP] ✓✓✓ H.264 pattern detected in UDP packet! ✓✓✓")
+            if device_id:
+                # Try to process with device ID
+                handler.device_id = device_id
             handler.process_raw_h264_data(data)
             return
         
         # Check for RTP header
         if handler.detect_rtp_header(data):
             print(f"[UDP] ✓✓✓ RTP header detected in UDP packet! ✓✓✓")
+            if device_id:
+                handler.device_id = device_id
             handler.process_rtp_packet(data)
             return
         
@@ -951,48 +1075,67 @@ def handle_udp_video_packet(data, addr, port=None):
         msg = parser.parse_message(data)
         if msg:
             msg_id = msg['msg_id']
-            phone = msg.get('phone', 'Unknown')
+            phone = msg.get('phone', device_id or 'Unknown')
             
             print(f"[UDP] Parsed message ID=0x{msg_id:04X} from {phone} at {addr}")
             
             # Handle real-time video data on UDP
             if msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, 0x9206, 0x9207]:
-                print(f"[UDP VIDEO] ✓ Real-time video data from {phone} at {addr} (0x{msg_id:04X})")
-                
-                video_info = handler.parse_realtime_video_data(msg['body'], msg_id)
-                
-                if video_info:
-                    channel = video_info['logic_channel']
-                    video_data = video_info['video_data']
-                    
-                    # Add frame to stream manager
-                    stream_manager.add_frame(
-                        phone,
-                        channel,
-                        video_data,
-                        {
-                            'latitude': video_info.get('latitude', 0.0),
-                            'longitude': video_info.get('longitude', 0.0),
-                            'speed': video_info.get('speed', 0.0),
-                            'direction': video_info.get('direction', 0)
-                        }
-                    )
-                    
-                    print(f"[UDP VIDEO] ✓ Channel={channel}, DataType={video_info.get('data_type', 'N/A')}, "
-                          f"PackageType={video_info.get('package_type', 'N/A')}, Size={len(video_data)} bytes")
+                # Check if this is a control command (4 bytes) or video data (13+ bytes)
+                if msg_id == MSG_ID_VIDEO_DATA_CONTROL and len(msg['body']) == 4:
+                    print(f"[UDP] Received 0x9202 control command (not video data)")
                 else:
-                    print(f"[UDP VIDEO] ✗ Failed to parse video data")
+                    print(f"[UDP VIDEO] ✓✓✓ Real-time video data from {phone} at {addr} (0x{msg_id:04X}) ✓✓✓")
+                    
+                    video_info = handler.parse_realtime_video_data(msg['body'], msg_id)
+                    
+                    if video_info:
+                        channel = video_info['logic_channel']
+                        video_data = video_info['video_data']
+                        
+                        print(f"[UDP VIDEO] Parsed: Channel={channel}, DataType={video_info.get('data_type', 'N/A')}, "
+                              f"PackageType={video_info.get('package_type', 'N/A')}, VideoSize={len(video_data)} bytes")
+                        
+                        # Add frame to stream manager
+                        stream_manager.add_frame(
+                            phone,
+                            channel,
+                            video_data,
+                            {
+                                'latitude': video_info.get('latitude', 0.0),
+                                'longitude': video_info.get('longitude', 0.0),
+                                'speed': video_info.get('speed', 0.0),
+                                'direction': video_info.get('direction', 0)
+                            }
+                        )
+                        
+                        print(f"[UDP VIDEO] ✓ Frame added to stream - Device={phone}, Channel={channel}, Size={len(video_data)} bytes")
+                    else:
+                        print(f"[UDP VIDEO] ✗ Failed to parse video data")
+                        print(f"[UDP VIDEO] Body length: {len(msg['body'])} bytes")
+                        if len(msg['body']) > 0:
+                            print(f"[UDP VIDEO] First 20 bytes: {binascii.hexlify(msg['body'][:20]).decode()}")
             else:
                 print(f"[UDP] Message ID=0x{msg_id:04X} from {addr} (not video data)")
         else:
-            print(f"[UDP] Failed to parse message from {addr}")
+            print(f"[UDP] Failed to parse as JTT808 message from {addr}")
             print(f"[UDP] First 50 bytes: {binascii.hexlify(data[:50]).decode()}")
             print(f"[UDP] ⚠️ Unparseable UDP packet - might be raw video data!")
             
-            # Try to process as raw video anyway
+            # Try to process as raw video anyway if packet is large enough
             if packet_size > 100:  # Large packets are likely video
                 print(f"[UDP] Attempting to process as raw video data...")
+                if device_id:
+                    handler.device_id = device_id
                 handler.process_raw_h264_data(data)
+            elif packet_size > 20:
+                # Even smaller packets might be video fragments
+                print(f"[UDP] Small packet - checking for video patterns...")
+                if handler.detect_h264_patterns(data):
+                    print(f"[UDP] ✓ H.264 pattern found in small packet!")
+                    if device_id:
+                        handler.device_id = device_id
+                    handler.process_raw_h264_data(data)
     except Exception as e:
         print(f"[ERROR] Error handling UDP packet from {addr}: {e}")
         import traceback
@@ -1084,6 +1227,9 @@ def start_jt808_server():
                 for existing_conn in existing_connections:
                     if existing_conn.device_id:
                         print(f"[CONN] Existing connection has device_id: {existing_conn.device_id}, will try to associate new connection")
+                        # Pre-associate device_id if we have a strong match
+                        # (will be confirmed when device sends registration/auth)
+                        break
         
         # (Some devices open separate connections for video)
         handler = DeviceHandler(conn, addr)

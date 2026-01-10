@@ -169,10 +169,23 @@ class JT808Parser:
                     if stream_type > 1:
                         errors.append(f"0x9101 Stream type out of range: {stream_type} (expected 0-1)")
         
-        elif msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL]:
-            # 0x9201/0x9202: Channel(1) + DataType(1) + PackageType(1) + Timestamp(6) + Interval(2) + Size(2) = 13 bytes minimum
+        elif msg_id == MSG_ID_VIDEO_DATA:
+            # 0x9201: Channel(1) + DataType(1) + PackageType(1) + Timestamp(6) + Interval(2) + Size(2) = 13 bytes minimum
             if len(body) < 13:
                 errors.append(f"0x{msg_id:04X} body too short: {len(body)} bytes (minimum 13)")
+        elif msg_id == MSG_ID_VIDEO_DATA_CONTROL:
+            # 0x9202 can be either:
+            # - Control command (when sent TO device): 4 bytes [ControlType(1)][Channel(1)][DataType(1)][StreamType(1)]
+            # - Video data (when received FROM device): 13+ bytes [Channel(1)][DataType(1)][PackageType(1)][Timestamp(6)][Interval(2)][Size(2)][Data...]
+            if len(body) == 4:
+                # Valid control command format
+                pass
+            elif len(body) >= 13:
+                # Valid video data format
+                pass
+            else:
+                # Invalid length (between 5-12 bytes is invalid)
+                errors.append(f"0x{msg_id:04X} body length invalid: {len(body)} bytes (expected 4 for control command or 13+ for video data)")
         
         return (len(errors) == 0, errors)
     
