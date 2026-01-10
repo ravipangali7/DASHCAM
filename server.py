@@ -56,6 +56,12 @@ class DeviceHandler:
         # Stored video list from device
         self.stored_videos = []  # List of stored videos from device
         self.video_list_received = False  # Track if video list has been received
+        # Video list response buffering for fragmented messages
+        self.video_list_buffer = bytearray()  # Buffer for accumulating video list data
+        self.video_list_count = None  # Store the video count from first message
+        self.video_list_expected_size = None  # Expected total size
+        self.video_list_received_time = None  # Track when first fragment arrived
+        self.video_list_buffer_timeout = 10.0  # Timeout in seconds for incomplete buffers
         # Stored video download tracking
         self.video_downloads = {}  # video_id -> download state
         self.video_download_buffers = {}  # video_id -> list of chunks
@@ -71,7 +77,14 @@ class DeviceHandler:
         
         # Log all 0x1205 messages for video list debugging
         if msg_id == MSG_ID_VIDEO_UPLOAD:
+            msg_attr = msg.get('msg_attr', 0)
+            # Check fragmentation flag (bit 13 of message attribute)
+            is_fragmented = (msg_attr & 0x2000) != 0
+            packet_total = ((msg_attr >> 14) & 0x3FF) if is_fragmented else 1
+            packet_number = ((msg_attr >> 10) & 0xF) if is_fragmented else 1
+            
             print(f"[MSG 0x1205] Received 0x1205 message from {phone}, body_size={len(body)} bytes, seq={msg_seq}")
+            print(f"[MSG 0x1205] Message attr=0x{msg_attr:04X}, fragmented={is_fragmented}, packet={packet_number}/{packet_total}")
             if len(body) > 0:
                 # Show first few bytes as hex for debugging
                 preview = binascii.hexlify(body[:min(20, len(body))]).decode()
@@ -316,7 +329,131 @@ class DeviceHandler:
         # Handle video list response (0x1205 as response to 0x9205)
         # Try to detect video list response by structure, not just query flag
         elif msg_id == MSG_ID_VIDEO_UPLOAD:
-            # Check if this could be a video list response
+            # Check for timeout on existing buffer
+            if self.video_list_count is not None and self.video_list_received_time is not None:
+                elapsed = time.time() - self.video_list_received_time
+                if elapsed > self.video_list_buffer_timeout:
+                    print(f"[VIDEO LIST] ⚠️ Buffer timeout after {elapsed:.1f}s, expected {self.video_list_expected_size} bytes, got {len(self.video_list_buffer)} bytes")
+                    print(f"[VIDEO LIST] Clearing incomplete buffer and trying to parse what we have...")
+                    # Try to parse what we have
+                    if len(self.video_list_buffer) >= 2:
+                        video_list = self.parser.parse_video_list_response(bytes(self.video_list_buffer))
+                        if video_list and 'videos' in video_list and len(video_list['videos']) > 0:
+                            print(f"[VIDEO LIST] ✓ Parsed partial list: {len(video_list['videos'])} videos from incomplete buffer")
+                            self.stored_videos = video_list['videos']
+                            self.video_list_received = True
+                    # Reset buffer
+                    self.video_list_buffer = bytearray()
+                    self.video_list_count = None
+                    self.video_list_expected_size = None
+                    self.video_list_received_time = None
+            
+            # Check if we're already buffering (continuation message)
+            if self.video_list_count is not None:
+                # Reset timeout timer since we're receiving data
+                self.video_list_received_time = time.time()
+                
+                print(f"[VIDEO LIST BUFFER] Continuation message received: {len(body)} bytes")
+                print(f"[VIDEO LIST BUFFER] Current buffer: {len(self.video_list_buffer)} bytes (has count), expected: {self.video_list_expected_size} bytes")
+                
+                # Check if this continuation message also starts with count (device might repeat it)
+                # If so, skip the count bytes and only append the entries
+                if len(body) >= 2:
+                    try:
+                        body_count = struct.unpack('>H', body[0:2])[0]
+                        if body_count == self.video_list_count:
+                            # This message also has the count, skip it and append rest
+                            print(f"[VIDEO LIST BUFFER] Continuation message also contains count ({body_count}), skipping count bytes")
+                            self.video_list_buffer.extend(body[2:])  # Skip count, append entries
+                        else:
+                            # No count in this message, append entire body
+                            self.video_list_buffer.extend(body)
+                    except:
+                        # Can't parse count, just append entire body
+                        self.video_list_buffer.extend(body)
+                else:
+                    # Body too short, append as-is
+                    self.video_list_buffer.extend(body)
+                
+                print(f"[VIDEO LIST BUFFER] Buffer now: {len(self.video_list_buffer)} bytes")
+                
+                # Check if buffer is complete
+                if len(self.video_list_buffer) >= self.video_list_expected_size:
+                    print(f"[VIDEO LIST BUFFER] ✓ Buffer complete! Parsing video list...")
+                    video_list = self.parser.parse_video_list_response(bytes(self.video_list_buffer))
+                    if video_list and 'videos' in video_list:
+                        print(f"[VIDEO LIST] ✓ Video list response successfully parsed from {phone}: {video_list['video_count']} videos")
+                        self.stored_videos = video_list['videos']
+                        self.video_list_received = True
+                        
+                        # Log video details
+                        for video in self.stored_videos:
+                            print(f"[VIDEO LIST]   Video {video['index']}: Channel={video['channel']}, "
+                                  f"Time={video['start_time']} to {video['end_time']}, "
+                                  f"Alarm=0x{video['alarm_type']:08X}, Type={video['video_type']}")
+                        
+                        # Send response acknowledgment
+                        try:
+                            response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_LIST_QUERY, 0)
+                            self.conn.send(response)
+                            print(f"[TX] Video list response acknowledged")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to send video list acknowledgment: {e}")
+                        
+                        # Clear buffer
+                        self.video_list_buffer = bytearray()
+                        self.video_list_count = None
+                        self.video_list_expected_size = None
+                        self.video_list_received_time = None
+                        return
+                    else:
+                        print(f"[VIDEO LIST BUFFER] Parsing failed even with complete buffer")
+                        print(f"[VIDEO LIST BUFFER] Buffer content (first 50 bytes): {binascii.hexlify(self.video_list_buffer[:50]).decode()}")
+                        # Reset buffer on parse failure
+                        self.video_list_buffer = bytearray()
+                        self.video_list_count = None
+                        self.video_list_expected_size = None
+                        self.video_list_received_time = None
+                else:
+                    # Still waiting for more data
+                    remaining = self.video_list_expected_size - len(self.video_list_buffer)
+                    print(f"[VIDEO LIST BUFFER] Still waiting for {remaining} more bytes...")
+                    return  # Don't process as video data yet
+            
+            # Check if this is a new count-only message (first fragment)
+            # Device sends 6-byte message: count (2 bytes) + 4 bytes of zeros
+            if len(body) == 6 and len(body) >= 2:
+                try:
+                    video_count = struct.unpack('>H', body[0:2])[0]
+                    # Check if remaining bytes are zeros (typical pattern)
+                    remaining_bytes = body[2:6]
+                    if 0 < video_count <= 1000 and remaining_bytes == b'\x00\x00\x00\x00':
+                        print(f"[VIDEO LIST BUFFER] Detected count-only message: {video_count} videos")
+                        print(f"[VIDEO LIST BUFFER] Initializing buffer, expecting video entries in subsequent messages")
+                        
+                        # Initialize buffer with count
+                        self.video_list_count = video_count
+                        self.video_list_buffer = bytearray(body[:2])  # Store just the count
+                        # Calculate expected size (try 18-byte format first)
+                        self.video_list_expected_size = 2 + (video_count * 18)
+                        self.video_list_received_time = time.time()
+                        
+                        print(f"[VIDEO LIST BUFFER] Buffer initialized: count={video_count}, expected_size={self.video_list_expected_size} bytes")
+                        print(f"[VIDEO LIST BUFFER] Waiting for {self.video_list_expected_size - 2} more bytes in subsequent messages...")
+                        
+                        # Acknowledge the count message
+                        try:
+                            response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_LIST_QUERY, 0)
+                            self.conn.send(response)
+                            print(f"[TX] Video list count message acknowledged, waiting for entries...")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to send acknowledgment: {e}")
+                        
+                        return  # Don't process as video data
+                except:
+                    pass
+            
+            # Check if this could be a complete video list response (non-fragmented)
             # Video list characteristics:
             # 1. Small body size (typically < 1000 bytes, but can be larger with many videos)
             # 2. Starts with 2-byte video count (big-endian)
@@ -344,7 +481,7 @@ class DeviceHandler:
                             # Allow some tolerance (messages might have extra padding or be incomplete)
                             if (abs(len(body) - expected_size_18) <= 10 or 
                                 abs(len(body) - expected_size_22) <= 10 or
-                                len(body) < 1000):  # Small messages are likely video lists
+                                (len(body) < 1000 and video_count == 0)):  # Empty list is small
                                 is_potential_video_list = True
                                 detection_reason = f"Structure matches video list: count={video_count}, body_size={len(body)}, expected_18={expected_size_18}, expected_22={expected_size_22}"
                 except:
