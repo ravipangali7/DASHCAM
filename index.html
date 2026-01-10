@@ -264,6 +264,7 @@
             try {
                 document.getElementById('serverStatus').textContent = 'Server: Loading...';
                 document.getElementById('serverStatus').classList.remove('active');
+                hideError();
                 
                 const response = await fetch(`${API_BASE}/api/videos`);
                 if (!response.ok) {
@@ -280,11 +281,50 @@
                 renderFileList();
             } catch (error) {
                 console.error('Error loading video files:', error);
-                document.getElementById('serverStatus').textContent = 'Server: Error';
-                document.getElementById('serverStatus').classList.remove('active');
-                document.getElementById('fileList').innerHTML = 
-                    '<div class="error">Failed to load video files. Please check if the server is running.</div>';
+                
+                // Detect connection refused error
+                const isConnectionRefused = error.message.includes('Failed to fetch') || 
+                                          error.message.includes('NetworkError') ||
+                                          error.name === 'TypeError';
+                
+                if (isConnectionRefused) {
+                    document.getElementById('serverStatus').textContent = 'Server: Offline';
+                    document.getElementById('serverStatus').classList.remove('active');
+                    showServerOfflineError();
+                } else {
+                    document.getElementById('serverStatus').textContent = 'Server: Error';
+                    document.getElementById('serverStatus').classList.remove('active');
+                    showError(`Failed to load video files: ${error.message}`);
+                }
             }
+        }
+        
+        function showServerOfflineError() {
+            const container = document.getElementById('fileList');
+            container.innerHTML = `
+                <div class="error" style="padding: 20px; text-align: center;">
+                    <h3 style="margin-bottom: 15px; color: #c62828;">⚠️ Server is Not Running</h3>
+                    <p style="margin-bottom: 15px; font-size: 14px;">
+                        The video server is not running on port 2223.
+                    </p>
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left;">
+                        <p style="margin-bottom: 10px; font-weight: bold;">To start the server:</p>
+                        <ol style="margin-left: 20px; line-height: 1.8;">
+                            <li>Open a terminal/command prompt</li>
+                            <li>Navigate to the project directory:
+                                <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px; display: block; margin-top: 5px;">cd c:\\Mine\\Projects\\DASHCAM</code>
+                            </li>
+                            <li>Run the server:
+                                <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px; display: block; margin-top: 5px;">python start_video_server.py</code>
+                            </li>
+                            <li>Or double-click <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px;">start_server.bat</code> (Windows)</li>
+                        </ol>
+                    </div>
+                    <p style="font-size: 12px; color: #666; margin-top: 15px;">
+                        Once the server is running, click the "Refresh List" button above.
+                    </p>
+                </div>
+            `;
         }
         
         function renderFileList() {
