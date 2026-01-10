@@ -69,6 +69,7 @@ class DeviceHandler:
         self._video_list_query_attempted = None  # Timestamp of last query attempt
         self._video_list_query_cooldown = 30.0  # Cooldown in seconds between queries
         self._location_message_count = 0  # Count location messages received
+        self._video_list_query_in_progress = False  # Track if query is currently in progress
         
     def handle_message(self, msg, raw_message=None):
         """Handle parsed JTT 808/1078 messages"""
@@ -408,6 +409,10 @@ class DeviceHandler:
         
         # Handle video list response (0x1205 as response to 0x9205)
         # Try to detect video list response by structure, not just query flag
+        # Note: Some devices send count-only messages (6 bytes) but may not send
+        # actual video entries. The buffer logic handles this by waiting for entries
+        # and timing out if they don't arrive. Protocol parameters (0xFF for all
+        # channels/types, 0xFFFFFFFFFFFF for no time limits) are correct per JTT1078.
         elif msg_id == MSG_ID_VIDEO_UPLOAD:
             # Check for timeout on existing buffer
             if self.video_list_count is not None and self.video_list_received_time is not None:
@@ -422,11 +427,65 @@ class DeviceHandler:
                             print(f"[VIDEO LIST] ✓ Parsed partial list: {len(video_list['videos'])} videos from incomplete buffer")
                             self.stored_videos = video_list['videos']
                             self.video_list_received = True
-                    # Reset buffer
+                    # Reset buffer and query state
                     self.video_list_buffer = bytearray()
                     self.video_list_count = None
                     self.video_list_expected_size = None
                     self.video_list_received_time = None
+                    self._video_list_query_in_progress = False
+                    
+                    # After timeout, check if new incoming message is a count-only message
+                    # This will be handled by the new count detection logic above
+            
+            # FIRST: Check if this is a new count-only message (even if buffer exists)
+            # This handles the case where device sends a new query response while old buffer exists
+            if len(body) == 6:
+                try:
+                    new_count = struct.unpack('>H', body[0:2])[0]
+                    remaining = body[2:6]
+                    if 0 < new_count <= 1000 and remaining == b'\x00\x00\x00\x00':
+                        # Check if this is different from current buffer or buffer timed out
+                        buffer_timed_out = False
+                        if self.video_list_received_time is not None:
+                            elapsed = time.time() - self.video_list_received_time
+                            if elapsed > self.video_list_buffer_timeout:
+                                buffer_timed_out = True
+                        
+                        is_new_response = (
+                            self.video_list_count is None or  # No buffer exists
+                            new_count != self.video_list_count or  # Different count
+                            buffer_timed_out  # Buffer timed out
+                        )
+                        
+                        if is_new_response:
+                            # New query response - reset buffer
+                            print(f"[VIDEO LIST BUFFER] New count message detected: {new_count} videos (resetting buffer)")
+                            if self.video_list_count is not None:
+                                print(f"[VIDEO LIST BUFFER] Previous buffer had count={self.video_list_count}, replacing with new count={new_count}")
+                            
+                            # Initialize buffer with count
+                            self.video_list_count = new_count
+                            self.video_list_buffer = bytearray(body[:2])  # Store just the count
+                            # Calculate expected size (try 18-byte format first)
+                            self.video_list_expected_size = 2 + (new_count * 18)
+                            self.video_list_received_time = time.time()
+                            self._video_list_query_in_progress = True
+                            
+                            print(f"[VIDEO LIST BUFFER] Buffer initialized: count={new_count}, expected_size={self.video_list_expected_size} bytes")
+                            print(f"[VIDEO LIST BUFFER] Waiting for {self.video_list_expected_size - 2} more bytes in subsequent messages...")
+                            
+                            # Acknowledge the count message
+                            try:
+                                response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_LIST_QUERY, 0)
+                                self.conn.send(response)
+                                print(f"[TX] Video list count message acknowledged, waiting for entries...")
+                            except Exception as e:
+                                print(f"[ERROR] Failed to send acknowledgment: {e}")
+                            
+                            return  # Don't process as continuation or video data
+                except Exception as e:
+                    # Not a count message, continue with normal processing
+                    pass
             
             # Check if we're already buffering (continuation message)
             if self.video_list_count is not None:
@@ -480,11 +539,12 @@ class DeviceHandler:
                         except Exception as e:
                             print(f"[ERROR] Failed to send video list acknowledgment: {e}")
                         
-                        # Clear buffer
+                        # Clear buffer and reset query state
                         self.video_list_buffer = bytearray()
                         self.video_list_count = None
                         self.video_list_expected_size = None
                         self.video_list_received_time = None
+                        self._video_list_query_in_progress = False
                         return
                     else:
                         print(f"[VIDEO LIST BUFFER] Parsing failed even with complete buffer")
@@ -494,6 +554,7 @@ class DeviceHandler:
                         self.video_list_count = None
                         self.video_list_expected_size = None
                         self.video_list_received_time = None
+                        self._video_list_query_in_progress = False
                 else:
                     # Still waiting for more data
                     remaining = self.video_list_expected_size - len(self.video_list_buffer)
@@ -517,6 +578,7 @@ class DeviceHandler:
                         # Calculate expected size (try 18-byte format first)
                         self.video_list_expected_size = 2 + (video_count * 18)
                         self.video_list_received_time = time.time()
+                        self._video_list_query_in_progress = True
                         
                         print(f"[VIDEO LIST BUFFER] Buffer initialized: count={video_count}, expected_size={self.video_list_expected_size} bytes")
                         print(f"[VIDEO LIST BUFFER] Waiting for {self.video_list_expected_size - 2} more bytes in subsequent messages...")
@@ -873,6 +935,20 @@ class DeviceHandler:
             print(f"[VIDEO LIST QUERY] Starting video list query for device {phone}, msg_seq={msg_seq}")
             print(f"[VIDEO LIST QUERY] Authentication status: {self.authenticated} (not required for query)")
             
+            # Check if a query is already in progress
+            if self._video_list_query_in_progress:
+                # Check if buffer has timed out
+                buffer_timed_out = False
+                if self.video_list_received_time is not None:
+                    elapsed = time.time() - self.video_list_received_time
+                    if elapsed > self.video_list_buffer_timeout:
+                        buffer_timed_out = True
+                        print(f"[VIDEO LIST QUERY] Previous query timed out ({elapsed:.1f}s), resetting and allowing new query")
+                
+                if not buffer_timed_out:
+                    print(f"[VIDEO LIST QUERY] Query already in progress, skipping duplicate query")
+                    return False
+            
             if not self.conn:
                 print(f"[VIDEO LIST QUERY] ERROR: No connection available for device {phone}")
                 return False
@@ -884,6 +960,14 @@ class DeviceHandler:
             except (OSError, AttributeError) as e:
                 print(f"[VIDEO LIST QUERY] ERROR: Connection lost for device {phone}: {e}")
                 return False
+            
+            # Reset buffer state for new query
+            print(f"[VIDEO LIST QUERY] Resetting buffer state for new query...")
+            self.video_list_buffer = bytearray()
+            self.video_list_count = None
+            self.video_list_expected_size = None
+            self.video_list_received_time = None
+            self._video_list_query_in_progress = True
             
             print(f"[VIDEO LIST QUERY] Building query message...")
             video_list_query = self.parser.build_video_list_query(phone, msg_seq + 1)
