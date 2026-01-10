@@ -1,0 +1,466 @@
+[
+    {
+        "label": "struct",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "struct",
+        "description": "struct",
+        "detail": "struct",
+        "documentation": {}
+    },
+    {
+        "label": "binascii",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "binascii",
+        "description": "binascii",
+        "detail": "binascii",
+        "documentation": {}
+    },
+    {
+        "label": "socket",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "socket",
+        "description": "socket",
+        "detail": "socket",
+        "documentation": {}
+    },
+    {
+        "label": "threading",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "threading",
+        "description": "threading",
+        "detail": "threading",
+        "documentation": {}
+    },
+    {
+        "label": "os",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "os",
+        "description": "os",
+        "detail": "os",
+        "documentation": {}
+    },
+    {
+        "label": "sys",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "sys",
+        "description": "sys",
+        "detail": "sys",
+        "documentation": {}
+    },
+    {
+        "label": "JT808Parser",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_REGISTER",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_HEARTBEAT",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_AUTH",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_UPLOAD",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_LOCATION_UPLOAD",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_RESPONSE",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_LOGOUT",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_REALTIME_REQUEST",
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "isExtraImport": true,
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "stream_manager",
+        "importPath": "video_streamer",
+        "description": "video_streamer",
+        "isExtraImport": true,
+        "detail": "video_streamer",
+        "documentation": {}
+    },
+    {
+        "label": "queue",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "queue",
+        "description": "queue",
+        "detail": "queue",
+        "documentation": {}
+    },
+    {
+        "label": "time",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "time",
+        "description": "time",
+        "detail": "time",
+        "documentation": {}
+    },
+    {
+        "label": "defaultdict",
+        "importPath": "collections",
+        "description": "collections",
+        "isExtraImport": true,
+        "detail": "collections",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPServer",
+        "importPath": "http.server",
+        "description": "http.server",
+        "isExtraImport": true,
+        "detail": "http.server",
+        "documentation": {}
+    },
+    {
+        "label": "BaseHTTPRequestHandler",
+        "importPath": "http.server",
+        "description": "http.server",
+        "isExtraImport": true,
+        "detail": "http.server",
+        "documentation": {}
+    },
+    {
+        "label": "json",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "json",
+        "description": "json",
+        "detail": "json",
+        "documentation": {}
+    },
+    {
+        "label": "JT808Parser",
+        "kind": 6,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "class JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()\n    def escape_decode(self, data):\n        \"\"\"Decode escaped data (0x7D 0x01 -> 0x7D, 0x7D 0x02 -> 0x7E)\"\"\"\n        result = bytearray()\n        i = 0\n        while i < len(data):\n            if data[i] == ESCAPE_FLAG and i + 1 < len(data):\n                if data[i + 1] == 0x01:",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_TERMINAL_RESPONSE = 0x0001\nMSG_ID_TERMINAL_LOGOUT = 0x0003\nMSG_ID_REGISTER = 0x0100\nMSG_ID_REGISTER_RESPONSE = 0x8100\nMSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_LOGOUT",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_TERMINAL_LOGOUT = 0x0003\nMSG_ID_REGISTER = 0x0100\nMSG_ID_REGISTER_RESPONSE = 0x8100\nMSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_REGISTER",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_REGISTER = 0x0100\nMSG_ID_REGISTER_RESPONSE = 0x8100\nMSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_REGISTER_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_REGISTER_RESPONSE = 0x8100\nMSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_HEARTBEAT",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_HEARTBEAT = 0x0002\nMSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_HEARTBEAT_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_HEARTBEAT_RESPONSE = 0x8002\nMSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_AUTH",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_TERMINAL_AUTH = 0x0102\nMSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_TERMINAL_AUTH_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_TERMINAL_AUTH_RESPONSE = 0x8001\nMSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_LOCATION_UPLOAD",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_LOCATION_UPLOAD = 0x0200\nMSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_LOCATION_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_LOCATION_RESPONSE = 0x8003\nMSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_LOGOUT_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_LOGOUT_RESPONSE = 0x8001  # Uses same response ID as auth (general command response)\n# JTT 1078 Video Message IDs\nMSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_REALTIME_REQUEST",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_REALTIME_REQUEST = 0x9101  # Real-time Audio and Video Transmission Request\nMSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_UPLOAD",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_UPLOAD = 0x1205\nMSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_UPLOAD_INIT",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_UPLOAD_INIT = 0x1206\nMSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_DATA",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_DATA = 0x9201\nMSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_DATA_CONTROL",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_DATA_CONTROL = 0x9202\nMSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_LIST_QUERY",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_LIST_QUERY = 0x9205\nMSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()\n    def escape_decode(self, data):",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "MSG_ID_VIDEO_LIST_RESPONSE",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "MSG_ID_VIDEO_LIST_RESPONSE = 0x1205\n# Protocol Constants\nSTART_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()\n    def escape_decode(self, data):\n        \"\"\"Decode escaped data (0x7D 0x01 -> 0x7D, 0x7D 0x02 -> 0x7E)\"\"\"",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "START_FLAG",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "START_FLAG = 0x7E\nESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()\n    def escape_decode(self, data):\n        \"\"\"Decode escaped data (0x7D 0x01 -> 0x7D, 0x7D 0x02 -> 0x7E)\"\"\"\n        result = bytearray()\n        i = 0",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "ESCAPE_FLAG",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "ESCAPE_FLAG = 0x7D\nESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()\n    def escape_decode(self, data):\n        \"\"\"Decode escaped data (0x7D 0x01 -> 0x7D, 0x7D 0x02 -> 0x7E)\"\"\"\n        result = bytearray()\n        i = 0\n        while i < len(data):",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "ESCAPE_XOR",
+        "kind": 5,
+        "importPath": "jt808_protocol",
+        "description": "jt808_protocol",
+        "peekOfCode": "ESCAPE_XOR = 0x20\nclass JT808Parser:\n    def __init__(self):\n        self.buffer = bytearray()\n    def escape_decode(self, data):\n        \"\"\"Decode escaped data (0x7D 0x01 -> 0x7D, 0x7D 0x02 -> 0x7E)\"\"\"\n        result = bytearray()\n        i = 0\n        while i < len(data):\n            if data[i] == ESCAPE_FLAG and i + 1 < len(data):",
+        "detail": "jt808_protocol",
+        "documentation": {}
+    },
+    {
+        "label": "DeviceHandler",
+        "kind": 6,
+        "importPath": "server",
+        "description": "server",
+        "peekOfCode": "class DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.buffer = bytearray()\n    def handle_message(self, msg):\n        \"\"\"Handle parsed JTT 808/1078 messages\"\"\"",
+        "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "start_jt808_server",
+        "kind": 2,
+        "importPath": "server",
+        "description": "server",
+        "peekOfCode": "def start_jt808_server():\n    \"\"\"Start JTT 808/1078 server\"\"\"\n    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n    try:\n        server.bind((HOST, JT808_PORT))\n    except OSError as e:\n        if e.errno == 98:  # Address already in use\n            print(f\"[ERROR] Port {JT808_PORT} is already in use!\")\n            print(f\"[INFO] To find what's using the port, run: sudo netstat -tulnp | grep {JT808_PORT}\")",
+        "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "HOST",
+        "kind": 5,
+        "importPath": "server",
+        "description": "server",
+        "peekOfCode": "HOST = \"0.0.0.0\"\nJT808_PORT = int(os.environ.get('JT808_PORT', 2222))\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.buffer = bytearray()",
+        "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "JT808_PORT",
+        "kind": 5,
+        "importPath": "server",
+        "description": "server",
+        "peekOfCode": "JT808_PORT = int(os.environ.get('JT808_PORT', 2222))\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.buffer = bytearray()\n    def handle_message(self, msg):",
+        "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "VideoStreamManager",
+        "kind": 6,
+        "importPath": "video_streamer",
+        "description": "video_streamer",
+        "peekOfCode": "class VideoStreamManager:\n    def __init__(self):\n        self.streams = defaultdict(lambda: {\n            'frames': queue.Queue(maxsize=30),\n            'last_update': time.time(),\n            'device_info': {}\n        })\n        self.lock = threading.Lock()\n    def add_frame(self, device_id, channel, frame_data, metadata=None):\n        \"\"\"Add a video frame from device\"\"\"",
+        "detail": "video_streamer",
+        "documentation": {}
+    },
+    {
+        "label": "stream_manager",
+        "kind": 5,
+        "importPath": "video_streamer",
+        "description": "video_streamer",
+        "peekOfCode": "stream_manager = VideoStreamManager()",
+        "detail": "video_streamer",
+        "documentation": {}
+    },
+    {
+        "label": "StreamingHandler",
+        "kind": 6,
+        "importPath": "web_server",
+        "description": "web_server",
+        "peekOfCode": "class StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Log request for debugging (can be disabled if too verbose)\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        if self.path == '/' or self.path == '/index.html':\n            self.serve_index()\n        elif self.path == '/api/streams':\n            self.list_streams()\n        elif self.path.startswith('/api/stream/'):\n            self.stream_video()",
+        "detail": "web_server",
+        "documentation": {}
+    },
+    {
+        "label": "start_web_server",
+        "kind": 2,
+        "importPath": "web_server",
+        "description": "web_server",
+        "peekOfCode": "def start_web_server():\n    \"\"\"Start web server\"\"\"\n    try:\n        server = HTTPServer(('0.0.0.0', WEB_PORT), StreamingHandler)\n        print(f\"[*] Web server listening on http://0.0.0.0:{WEB_PORT}\")\n        print(f\"[*] Access the dashboard at: http://localhost:{WEB_PORT} or http://82.180.145.220:{WEB_PORT}\")\n        server.serve_forever()\n    except OSError as e:\n        if e.errno == 98:  # Address already in use\n            print(f\"[ERROR] Port {WEB_PORT} is already in use!\")",
+        "detail": "web_server",
+        "documentation": {}
+    },
+    {
+        "label": "WEB_PORT",
+        "kind": 5,
+        "importPath": "web_server",
+        "description": "web_server",
+        "peekOfCode": "WEB_PORT = 2223\nclass StreamingHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        # Log request for debugging (can be disabled if too verbose)\n        print(f\"[HTTP] GET {self.path} from {self.client_address[0]}\")\n        if self.path == '/' or self.path == '/index.html':\n            self.serve_index()\n        elif self.path == '/api/streams':\n            self.list_streams()\n        elif self.path.startswith('/api/stream/'):",
+        "detail": "web_server",
+        "documentation": {}
+    }
+]
