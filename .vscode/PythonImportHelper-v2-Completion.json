@@ -167,20 +167,11 @@
         "documentation": {}
     },
     {
-        "label": "queue",
-        "kind": 6,
+        "label": "HTTPServer",
+        "importPath": "http.server",
+        "description": "http.server",
         "isExtraImport": true,
-        "importPath": "queue",
-        "description": "queue",
-        "detail": "queue",
-        "documentation": {}
-    },
-    {
-        "label": "defaultdict",
-        "importPath": "collections",
-        "description": "collections",
-        "isExtraImport": true,
-        "detail": "collections",
+        "detail": "http.server",
         "documentation": {}
     },
     {
@@ -226,11 +217,44 @@
         "documentation": {}
     },
     {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
         "label": "datetime",
         "importPath": "datetime",
         "description": "datetime",
         "isExtraImport": true,
         "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "queue",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "queue",
+        "description": "queue",
+        "detail": "queue",
+        "documentation": {}
+    },
+    {
+        "label": "defaultdict",
+        "importPath": "collections",
+        "description": "collections",
+        "isExtraImport": true,
+        "detail": "collections",
         "documentation": {}
     },
     {
@@ -519,6 +543,69 @@
         "description": "server",
         "peekOfCode": "connection_lock = threading.Lock()\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent\n        self.video_request_attempts = []  # Track video request attempts with different params",
         "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "VideoFileHandler",
+        "kind": 6,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "class VideoFileHandler:\n    def __init__(self):\n        pass\n    def do_GET(self):\n        \"\"\"Handle GET requests\"\"\"\n        # Parse path and query string\n        parsed_path = urllib.parse.urlparse(self.path)\n        path = parsed_path.path\n        query = parsed_path.query\n        # Log request",
+        "detail": "start_video_server",
+        "documentation": {}
+    },
+    {
+        "label": "VideoServerHandler",
+        "kind": 6,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "class VideoServerHandler(VideoFileHandler, object):\n    pass\ndef start_server():\n    \"\"\"Start the video file server\"\"\"\n    try:\n        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoServerHandler)\n        print(f\"[*] Video File Server listening on http://0.0.0.0:{WEB_PORT}\")\n        print(f\"[*] Access the video player at: http://localhost:{WEB_PORT}\")\n        print(f\"[*] Press Ctrl+C to stop the server\")\n        server.serve_forever()",
+        "detail": "start_video_server",
+        "documentation": {}
+    },
+    {
+        "label": "start_server",
+        "kind": 2,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "def start_server():\n    \"\"\"Start the video file server\"\"\"\n    try:\n        server = HTTPServer(('0.0.0.0', WEB_PORT), VideoServerHandler)\n        print(f\"[*] Video File Server listening on http://0.0.0.0:{WEB_PORT}\")\n        print(f\"[*] Access the video player at: http://localhost:{WEB_PORT}\")\n        print(f\"[*] Press Ctrl+C to stop the server\")\n        server.serve_forever()\n    except OSError as e:\n        if e.errno == 98 or e.errno == 10048:  # Address already in use (Linux/Windows)",
+        "detail": "start_video_server",
+        "documentation": {}
+    },
+    {
+        "label": "WEB_PORT",
+        "kind": 5,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "WEB_PORT = 2223\n# Video directory configuration\nVIDEO_DIR = os.environ.get('VIDEO_DIR', './videos')\nVIDEO_DIR = Path(VIDEO_DIR).resolve()\n# Supported video file extensions\nVIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)",
+        "detail": "start_video_server",
+        "documentation": {}
+    },
+    {
+        "label": "VIDEO_DIR",
+        "kind": 5,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "VIDEO_DIR = os.environ.get('VIDEO_DIR', './videos')\nVIDEO_DIR = Path(VIDEO_DIR).resolve()\n# Supported video file extensions\nVIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)\n        print(f\"[INFO] Created video directory: {VIDEO_DIR}\")\n    except Exception as e:",
+        "detail": "start_video_server",
+        "documentation": {}
+    },
+    {
+        "label": "VIDEO_DIR",
+        "kind": 5,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "VIDEO_DIR = Path(VIDEO_DIR).resolve()\n# Supported video file extensions\nVIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)\n        print(f\"[INFO] Created video directory: {VIDEO_DIR}\")\n    except Exception as e:\n        print(f\"[WARNING] Failed to create video directory {VIDEO_DIR}: {e}\")",
+        "detail": "start_video_server",
+        "documentation": {}
+    },
+    {
+        "label": "VIDEO_EXTENSIONS",
+        "kind": 5,
+        "importPath": "start_video_server",
+        "description": "start_video_server",
+        "peekOfCode": "VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.h264', '.264'}\n# Create video directory if it doesn't exist\nif not VIDEO_DIR.exists():\n    try:\n        VIDEO_DIR.mkdir(parents=True, exist_ok=True)\n        print(f\"[INFO] Created video directory: {VIDEO_DIR}\")\n    except Exception as e:\n        print(f\"[WARNING] Failed to create video directory {VIDEO_DIR}: {e}\")\n        print(f\"[WARNING] Video file serving may not work properly\")\nelse:",
+        "detail": "start_video_server",
         "documentation": {}
     },
     {
