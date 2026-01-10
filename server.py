@@ -1,6 +1,17 @@
 """
 JTT 808/1078 Server
 Handles device connections and video streaming
+
+Protocol References:
+- JTT 808-2013: Terminal communication protocol and data format
+- JTT 1078-2016: Video communication protocol for road transport vehicles
+
+Video Streaming Flow:
+1. Device connects and registers (0x0100)
+2. Device authenticates (0x0102)
+3. Server sends video real-time request (0x9101)
+4. Device acknowledges (0x0001)
+5. Device sends video data (0x9201, 0x9202, etc.)
 """
 import socket
 import binascii
@@ -49,9 +60,24 @@ class DeviceHandler:
         
         # Enhanced logging with hex dump for debugging
         print(f"[MSG #{self.message_count}] ID=0x{msg_id:04X}, Phone={phone}, Seq={msg_seq}, BodyLen={len(body)}")
-        if raw_message and len(raw_message) <= 200:  # Only show hex for small messages
+        
+        # Comprehensive hex dump with byte structure
+        if raw_message:
             hex_dump = binascii.hexlify(raw_message).decode()
-            print(f"[HEX] {hex_dump[:100]}{'...' if len(hex_dump) > 100 else ''}")
+            print(f"[HEX FULL] {hex_dump}")
+            
+            # Show structured byte breakdown for important messages
+            if msg_id == MSG_ID_VIDEO_REALTIME_REQUEST:
+                print(f"[HEX STRUCT] 0x9101 structure: [7E][ID(2)][Attr(2)][Phone(6)][Seq(2)][Body({len(body)})][Checksum(1)][7E]")
+            elif msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL]:
+                if len(body) >= 13:
+                    print(f"[HEX STRUCT] 0x{msg_id:04X} body: [Channel(1)={body[0]:02X}][DataType(1)={body[1]:02X}][PkgType(1)={body[2]:02X}][Time(6)={binascii.hexlify(body[3:9]).decode()}][Interval(2)={binascii.hexlify(body[9:11]).decode()}][Size(2)={binascii.hexlify(body[11:13]).decode()}][Data({len(body)-13})]")
+        
+        if raw_message and len(raw_message) <= 200:  # Show formatted hex for small messages
+            hex_dump = binascii.hexlify(raw_message).decode()
+            # Format as bytes with spacing
+            formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+            print(f"[HEX FORMATTED] {formatted_hex[:150]}{'...' if len(formatted_hex) > 150 else ''}")
         
         # Register device if not already registered
         if self.device_id is None:
@@ -111,6 +137,14 @@ class DeviceHandler:
             print(f"[TX] Logout response sent")
         
         # Handle registration (0x0100)
+        # JTT808 Protocol Format (Message Body):
+        # - Bytes 0-1: Province ID (2 bytes)
+        # - Bytes 2-3: City/County ID (2 bytes)
+        # - Bytes 4-8: Manufacturer ID (5 bytes, ASCII)
+        # - Bytes 9-28: Terminal model (20 bytes, ASCII, null-padded)
+        # - Bytes 29-44: Terminal ID (16 bytes, ASCII, null-padded)
+        # - Byte 45: License plate color (1 byte)
+        # - Bytes 46+: License plate number (variable, ASCII)
         elif msg_id == MSG_ID_REGISTER:
             print(f"[+] Device registration from {phone}")
             self.device_id = phone
@@ -125,6 +159,9 @@ class DeviceHandler:
             print(f"[TX] Heartbeat response sent")
         
         # Handle authentication (0x0102)
+        # JTT808 Protocol Format (Message Body):
+        # - Bytes 0-15: Authentication code (16 bytes, ASCII, null-padded)
+        # Note: Some devices send minimal body (1 byte)
         elif msg_id == MSG_ID_TERMINAL_AUTH:
             print(f"[+] Authentication request from {phone}")
             # Extract authentication code from body
@@ -361,7 +398,10 @@ class DeviceHandler:
                 self.video_request_time = time.time()
                 self.video_request_attempts.append(config)
                 print(f"[TX] Video streaming request sent to {phone}: IP={server_ip}, Port={video_port}, {config['desc']}")
-                print(f"[TX] Request hex: {binascii.hexlify(video_request).decode()[:100]}...")
+                hex_dump = binascii.hexlify(video_request).decode()
+                formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+                print(f"[TX HEX] Complete message: {formatted_hex}")
+                print(f"[TX STRUCT] Message structure: [7E][ID=9101(2)][Attr(2)][Phone={phone}(6)][Seq(2)][Body(12)][Checksum(1)][7E]")
                 
                 # Start a thread to check if video arrives, if not try alternative configs
                 threading.Thread(target=self.check_video_and_retry, args=(phone, msg_seq, server_ip, video_port, configs_to_try[1:]), daemon=True).start()
@@ -536,11 +576,65 @@ class DeviceHandler:
                 )
                 print(f"[RTP VIDEO] ✓ Added RTP/H.264 payload to stream: Device={self.device_id}, Size={len(payload)} bytes")
     
+    def validate_video_data_format(self, body, msg_id):
+        """
+        Validate video data message format against JTT1078 specification
+        
+        Returns: (is_valid, errors_list)
+        """
+        errors = []
+        
+        # Minimum size: Channel(1) + DataType(1) + PackageType(1) + Timestamp(6) + Interval(2) + Size(2) = 13 bytes
+        if len(body) < 13:
+            errors.append(f"Body too short: {len(body)} bytes (minimum 13)")
+            return (False, errors)
+        
+        # Validate channel (typically 0-127)
+        channel = body[0]
+        if channel > 127:
+            errors.append(f"Channel out of typical range: {channel}")
+        
+        # Validate data type (0=I-frame, 1=P-frame, 2=B-frame, 3=Audio)
+        data_type = body[1]
+        if data_type > 3:
+            errors.append(f"Data type out of range: {data_type} (expected 0-3)")
+        
+        # Validate package type (0=start, 1=continuation, 2=end)
+        package_type = body[2]
+        if package_type > 2:
+            errors.append(f"Package type out of range: {package_type} (expected 0-2)")
+        
+        # Validate timestamp is 6 bytes
+        if len(body) < 9:
+            errors.append(f"Timestamp incomplete: need 6 bytes starting at offset 3")
+        
+        return (len(errors) == 0, errors)
+    
     def parse_realtime_video_data(self, body, msg_id):
-        """Parse real-time video data packets (0x9201, 0x9202, 0x9206, 0x9207)"""
+        """
+        Parse real-time video data packets (0x9201, 0x9202, 0x9206, 0x9207)
+        
+        JTT1078 Protocol Format:
+        - Byte 0: Logical channel number (1 byte)
+        - Byte 1: Data type (1 byte): 0=I-frame, 1=P-frame, 2=B-frame, 3=Audio
+        - Byte 2: Package type (1 byte): 0=start, 1=continuation, 2=end
+        - Bytes 3-8: Timestamp (6 bytes BCD format: YYMMDDHHmmss)
+        - Bytes 9-10: Last frame interval (2 bytes, big-endian)
+        - Bytes 11-12: Last frame size (2 bytes, big-endian)
+        - Bytes 13+: Video data (variable length)
+        """
         import struct
         try:
-            if len(body) < 15:
+            # Validate message format first
+            is_valid, errors = self.validate_video_data_format(body, msg_id)
+            if not is_valid:
+                print(f"[PROTOCOL VALIDATION] 0x{msg_id:04X} format errors: {errors}")
+                if len(body) < 13:
+                    return None  # Can't parse if too short
+            
+            # Minimum body size: 3 (header) + 6 (timestamp) + 2 (interval) + 2 (size) = 13 bytes
+            if len(body) < 13:
+                print(f"[PROTOCOL] Video data body too short: {len(body)} bytes (minimum 13)")
                 return None
             
             # Parse real-time video packet format
@@ -548,18 +642,22 @@ class DeviceHandler:
             data_type = body[1]  # 0=I-frame, 1=P-frame, 2=B-frame, 3=Audio
             package_type = body[2]  # 0=start, 1=continuation, 2=end
             
-            # Parse timestamp (BCD format, 8 bytes: YYMMDDHHmmss)
-            timestamp_bytes = body[3:11]
-            timestamp_str = ''.join([f'{b >> 4}{b & 0x0F}' for b in timestamp_bytes])
+            # Parse timestamp (BCD format, 6 bytes: YYMMDDHHmmss) - JTT1078 standard
+            timestamp_bytes = body[3:9]  # Changed from 8 bytes to 6 bytes
+            if len(timestamp_bytes) == 6:
+                timestamp_str = ''.join([f'{b >> 4}{b & 0x0F}' for b in timestamp_bytes])
+            else:
+                timestamp_str = ''
+                print(f"[PROTOCOL] Warning: Timestamp bytes incomplete: {len(timestamp_bytes)} bytes")
             
-            # Last frame interval (2 bytes)
-            last_frame_interval = struct.unpack('>H', body[11:13])[0] if len(body) >= 13 else 0
+            # Last frame interval (2 bytes, big-endian)
+            last_frame_interval = struct.unpack('>H', body[9:11])[0] if len(body) >= 11 else 0
             
-            # Last frame size (2 bytes)
-            last_frame_size = struct.unpack('>H', body[13:15])[0] if len(body) >= 15 else 0
+            # Last frame size (2 bytes, big-endian)
+            last_frame_size = struct.unpack('>H', body[11:13])[0] if len(body) >= 13 else 0
             
-            # Video data starts at byte 15
-            video_data = body[15:] if len(body) > 15 else b''
+            # Video data starts at byte 13 (changed from byte 15)
+            video_data = body[13:] if len(body) > 13 else b''
             
             return {
                 'logic_channel': logic_channel,
@@ -663,7 +761,19 @@ class DeviceHandler:
                         self.handle_message(msg, raw_message=message)
                     else:
                         hex_data = binascii.hexlify(message).decode()
-                        print(f"[PARSE ERROR] Message length={len(message)}, First 100 bytes: {hex_data[:100]}")
+                        formatted_hex = ' '.join([hex_data[i:i+2] for i in range(0, len(hex_data), 2)])
+                        print(f"[PARSE ERROR] Message length={len(message)} bytes")
+                        print(f"[PARSE ERROR] Full hex: {formatted_hex}")
+                        print(f"[PARSE ERROR] Byte structure: [Start={message[0]:02X}][...{len(message)-2} bytes...][End={message[-1]:02X}]")
+                        
+                        # Try to identify message structure
+                        if len(message) >= 3:
+                            potential_id = (message[1] << 8) | message[2] if len(message) > 2 else 0
+                            print(f"[PARSE ERROR] Potential message ID: 0x{potential_id:04X}")
+                            if message[0] == 0x7E and message[-1] == 0x7E:
+                                print(f"[PARSE ERROR] Message has correct start/end flags (0x7E)")
+                            else:
+                                print(f"[PARSE ERROR] Message flags incorrect: start=0x{message[0]:02X}, end=0x{message[-1]:02X}")
                         
                         # Check if unparseable message contains video data
                         if self.check_raw_video_data(message):

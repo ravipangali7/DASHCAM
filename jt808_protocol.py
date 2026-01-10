@@ -1,6 +1,21 @@
 """
 JTT 808/1078 Protocol Parser
 Handles parsing of JTT 808 GPS tracking and JTT 1078 video streaming protocols
+
+Protocol References:
+- JTT 808-2013: Terminal communication protocol and data format of the road transport vehicle satellite positioning system
+- JTT 1078-2016: Video communication protocol for road transport vehicles
+
+Message Format (JTT808):
+- Start Flag: 0x7E (1 byte)
+- Message Header: Message ID (2 bytes) + Message Attribute (2 bytes) + Phone Number (6 bytes) + Message Sequence (2 bytes)
+- Message Body: Variable length
+- Checksum: XOR of all bytes from Message ID to end of Body (1 byte)
+- End Flag: 0x7E (1 byte)
+
+Escape Rules:
+- 0x7D 0x01 -> 0x7D
+- 0x7D 0x02 -> 0x7E
 """
 import struct
 import binascii
@@ -120,8 +135,54 @@ class JT808Parser:
             'raw': data
         }
     
+    def validate_message_format(self, msg_id, body):
+        """
+        Validate message format against JTT808/JTT1078 specification
+        
+        Returns: (is_valid, errors_list)
+        """
+        errors = []
+        
+        if msg_id == MSG_ID_VIDEO_REALTIME_REQUEST:
+            # 0x9101: IP_len(1) + IP(4) + TCP_port(2) + UDP_port(2) + Channel(1) + DataType(1) + StreamType(1) = 12 bytes
+            if len(body) < 12:
+                errors.append(f"0x9101 body too short: {len(body)} bytes (expected 12)")
+            elif len(body) > 12:
+                errors.append(f"0x9101 body too long: {len(body)} bytes (expected 12)")
+            else:
+                # Validate IP length
+                ip_length = body[0]
+                if ip_length != 4:
+                    errors.append(f"0x9101 IP length invalid: {ip_length} (expected 4)")
+                # Validate ports are in valid range (check bytes, not values)
+                # Validate channel, data_type, stream_type ranges
+                if len(body) >= 10:
+                    channel = body[9]
+                    if channel > 127:  # Typically 0-127
+                        errors.append(f"0x9101 Channel out of range: {channel}")
+                if len(body) >= 11:
+                    data_type = body[10]
+                    if data_type > 2:
+                        errors.append(f"0x9101 Data type out of range: {data_type} (expected 0-2)")
+                if len(body) >= 12:
+                    stream_type = body[11]
+                    if stream_type > 1:
+                        errors.append(f"0x9101 Stream type out of range: {stream_type} (expected 0-1)")
+        
+        elif msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL]:
+            # 0x9201/0x9202: Channel(1) + DataType(1) + PackageType(1) + Timestamp(6) + Interval(2) + Size(2) = 13 bytes minimum
+            if len(body) < 13:
+                errors.append(f"0x{msg_id:04X} body too short: {len(body)} bytes (minimum 13)")
+        
+        return (len(errors) == 0, errors)
+    
     def build_response(self, msg_id, phone, msg_seq, body=b''):
         """Build JTT 808 response message"""
+        # Validate message format before building
+        is_valid, errors = self.validate_message_format(msg_id, body)
+        if not is_valid:
+            print(f"[PROTOCOL VALIDATION] Warnings for 0x{msg_id:04X}: {errors}")
+        
         # Build message header
         header = struct.pack('>H', msg_id)  # Message ID
         header += struct.pack('>H', len(body))  # Message attribute (body length)
@@ -144,17 +205,33 @@ class JT808Parser:
         return packet
     
     def build_register_response(self, phone, msg_seq, result_code=0):
-        """Build registration response (0x8100)"""
+        """
+        Build registration response (0x8100)
+        
+        JTT808 Protocol Format (Message Body):
+        - Bytes 0-1: Result code (2 bytes, big-endian): 0=success, 1=failure
+        - Bytes 2-17: Authentication code (16 bytes, ASCII, null-padded)
+        """
         body = struct.pack('>H', result_code)  # Result code (0=success)
         body += b'\x00\x00'  # Authentication code (empty)
         return self.build_response(MSG_ID_REGISTER_RESPONSE, phone, msg_seq, body)
     
     def build_heartbeat_response(self, phone, msg_seq):
-        """Build heartbeat response (0x8002)"""
+        """
+        Build heartbeat response (0x8002)
+        
+        JTT808 Protocol Format:
+        - Message body is empty (0 bytes)
+        """
         return self.build_response(MSG_ID_HEARTBEAT_RESPONSE, phone, msg_seq)
     
     def build_auth_response(self, phone, msg_seq, result_code=0):
-        """Build authentication response (0x8001)"""
+        """
+        Build authentication response (0x8001)
+        
+        JTT808 Protocol Format (Message Body):
+        - Byte 0: Result code (1 byte): 0=success, 1=failure, 2=invalid, 3=not supported
+        """
         body = struct.pack('>B', result_code)  # Result code
         return self.build_response(MSG_ID_TERMINAL_AUTH_RESPONSE, phone, msg_seq, body)
     
@@ -252,6 +329,15 @@ class JT808Parser:
         """
         Build real-time audio and video transmission request (0x9101)
         
+        JTT1078 Protocol Format (Message Body):
+        - Byte 0: IP address length (1 byte, typically 4 for IPv4)
+        - Bytes 1-4: IP address (4 bytes for IPv4)
+        - Bytes 5-6: TCP port (2 bytes, big-endian)
+        - Bytes 7-8: UDP port (2 bytes, big-endian)
+        - Byte 9: Logical channel number (1 byte)
+        - Byte 10: Data type (1 byte): 0=AV, 1=Video only, 2=Audio only
+        - Byte 11: Stream type (1 byte): 0=Main stream, 1=Sub stream
+        
         Args:
             phone: Device phone number
             msg_seq: Message sequence number
@@ -262,6 +348,8 @@ class JT808Parser:
             data_type: Data type (1 byte): 0=AV, 1=Video only, 2=Audio only (default=1)
             stream_type: Stream type (1 byte): 0=Main stream, 1=Sub stream (default=0)
         """
+        import binascii
+        
         # Parse IP address to bytes
         ip_parts = server_ip.split('.')
         if len(ip_parts) != 4:
@@ -269,16 +357,61 @@ class JT808Parser:
         ip_bytes = bytes([int(part) for part in ip_parts])
         ip_length = len(ip_bytes)
         
-        # Build message body
-        body = struct.pack('>B', ip_length)  # IP address length
-        body += ip_bytes  # IP address
-        body += struct.pack('>H', tcp_port)  # TCP port
-        body += struct.pack('>H', udp_port)  # UDP port
-        body += struct.pack('>B', channel)  # Logical channel number
-        body += struct.pack('>B', data_type)  # Data type
-        body += struct.pack('>B', stream_type)  # Stream type
+        # Validate field sizes
+        if ip_length != 4:
+            raise ValueError(f"IP address length must be 4 bytes for IPv4, got {ip_length}")
+        if tcp_port < 0 or tcp_port > 65535:
+            raise ValueError(f"TCP port must be 0-65535, got {tcp_port}")
+        if udp_port < 0 or udp_port > 65535:
+            raise ValueError(f"UDP port must be 0-65535, got {udp_port}")
+        if channel < 0 or channel > 255:
+            raise ValueError(f"Channel must be 0-255, got {channel}")
+        if data_type < 0 or data_type > 2:
+            raise ValueError(f"Data type must be 0-2, got {data_type}")
+        if stream_type < 0 or stream_type > 1:
+            raise ValueError(f"Stream type must be 0-1, got {stream_type}")
         
-        return self.build_response(MSG_ID_VIDEO_REALTIME_REQUEST, phone, msg_seq, body)
+        # Build message body with detailed logging
+        body = bytearray()
+        
+        # Byte 0: IP address length
+        body.extend(struct.pack('>B', ip_length))
+        print(f"[PROTOCOL 0x9101] Field 0: IP length = {ip_length} bytes")
+        
+        # Bytes 1-4: IP address
+        body.extend(ip_bytes)
+        print(f"[PROTOCOL 0x9101] Field 1: IP address = {server_ip} ({binascii.hexlify(ip_bytes).decode()})")
+        
+        # Bytes 5-6: TCP port (big-endian)
+        tcp_port_bytes = struct.pack('>H', tcp_port)
+        body.extend(tcp_port_bytes)
+        print(f"[PROTOCOL 0x9101] Field 2: TCP port = {tcp_port} (0x{binascii.hexlify(tcp_port_bytes).decode()})")
+        
+        # Bytes 7-8: UDP port (big-endian)
+        udp_port_bytes = struct.pack('>H', udp_port)
+        body.extend(udp_port_bytes)
+        print(f"[PROTOCOL 0x9101] Field 3: UDP port = {udp_port} (0x{binascii.hexlify(udp_port_bytes).decode()})")
+        
+        # Byte 9: Logical channel number
+        body.extend(struct.pack('>B', channel))
+        print(f"[PROTOCOL 0x9101] Field 4: Channel = {channel} (0x{channel:02X})")
+        
+        # Byte 10: Data type
+        body.extend(struct.pack('>B', data_type))
+        data_type_names = {0: 'AV', 1: 'Video only', 2: 'Audio only'}
+        print(f"[PROTOCOL 0x9101] Field 5: Data type = {data_type} ({data_type_names.get(data_type, 'Unknown')})")
+        
+        # Byte 11: Stream type
+        body.extend(struct.pack('>B', stream_type))
+        stream_type_names = {0: 'Main stream', 1: 'Sub stream'}
+        print(f"[PROTOCOL 0x9101] Field 6: Stream type = {stream_type} ({stream_type_names.get(stream_type, 'Unknown')})")
+        
+        # Log complete body structure
+        body_bytes = bytes(body)
+        print(f"[PROTOCOL 0x9101] Complete body: {len(body_bytes)} bytes, hex: {binascii.hexlify(body_bytes).decode()}")
+        print(f"[PROTOCOL 0x9101] Body structure: [IP_len(1)][IP(4)][TCP_port(2)][UDP_port(2)][Channel(1)][DataType(1)][StreamType(1)]")
+        
+        return self.build_response(MSG_ID_VIDEO_REALTIME_REQUEST, phone, msg_seq, body_bytes)
     
     def build_video_list_query(self, phone, msg_seq, channel=0xFF, video_type=0xFF, start_time=None, end_time=None):
         """
