@@ -54,6 +54,15 @@
         "documentation": {}
     },
     {
+        "label": "time",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "time",
+        "description": "time",
+        "detail": "time",
+        "documentation": {}
+    },
+    {
         "label": "JT808Parser",
         "importPath": "jt808_protocol",
         "description": "jt808_protocol",
@@ -156,15 +165,6 @@
         "importPath": "queue",
         "description": "queue",
         "detail": "queue",
-        "documentation": {}
-    },
-    {
-        "label": "time",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "time",
-        "description": "time",
-        "detail": "time",
         "documentation": {}
     },
     {
@@ -403,7 +403,7 @@
         "kind": 6,
         "importPath": "server",
         "description": "server",
-        "peekOfCode": "class DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent\n        self.buffer = bytearray()\n    def handle_message(self, msg):",
+        "peekOfCode": "class DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent\n        self.video_request_attempts = []  # Track video request attempts with different params\n        self.video_packets_received = False  # Track if we've received any video packets",
         "detail": "server",
         "documentation": {}
     },
@@ -412,7 +412,7 @@
         "kind": 2,
         "importPath": "server",
         "description": "server",
-        "peekOfCode": "def handle_udp_video_packet(data, addr):\n    \"\"\"Handle UDP video packets\"\"\"\n    try:\n        parser = JT808Parser()\n        msg = parser.parse_message(data)\n        if msg:\n            msg_id = msg['msg_id']\n            phone = msg.get('phone', 'Unknown')\n            # Handle real-time video data on UDP\n            if msg_id in [MSG_ID_VIDEO_DATA, MSG_ID_VIDEO_DATA_CONTROL, 0x9206, 0x9207]:",
+        "peekOfCode": "def handle_udp_video_packet(data, addr):\n    \"\"\"Handle UDP video packets\"\"\"\n    try:\n        # Enhanced UDP logging\n        print(f\"[UDP] Received {len(data)} bytes from {addr}\")\n        if len(data) <= 100:\n            hex_dump = binascii.hexlify(data).decode()\n            print(f\"[UDP HEX] {hex_dump}\")\n        parser = JT808Parser()\n        msg = parser.parse_message(data)",
         "detail": "server",
         "documentation": {}
     },
@@ -439,7 +439,7 @@
         "kind": 5,
         "importPath": "server",
         "description": "server",
-        "peekOfCode": "HOST = \"0.0.0.0\"\nJT808_PORT = int(os.environ.get('JT808_PORT', 2222))\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent",
+        "peekOfCode": "HOST = \"0.0.0.0\"\nJT808_PORT = int(os.environ.get('JT808_PORT', 2222))\n# Global connection tracking\ndevice_connections = {}  # device_id -> list of connections\nconnection_lock = threading.Lock()\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()",
         "detail": "server",
         "documentation": {}
     },
@@ -448,7 +448,25 @@
         "kind": 5,
         "importPath": "server",
         "description": "server",
-        "peekOfCode": "JT808_PORT = int(os.environ.get('JT808_PORT', 2222))\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent\n        self.buffer = bytearray()",
+        "peekOfCode": "JT808_PORT = int(os.environ.get('JT808_PORT', 2222))\n# Global connection tracking\ndevice_connections = {}  # device_id -> list of connections\nconnection_lock = threading.Lock()\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None",
+        "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "device_connections",
+        "kind": 5,
+        "importPath": "server",
+        "description": "server",
+        "peekOfCode": "device_connections = {}  # device_id -> list of connections\nconnection_lock = threading.Lock()\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent",
+        "detail": "server",
+        "documentation": {}
+    },
+    {
+        "label": "connection_lock",
+        "kind": 5,
+        "importPath": "server",
+        "description": "server",
+        "peekOfCode": "connection_lock = threading.Lock()\nclass DeviceHandler:\n    def __init__(self, conn, addr):\n        self.conn = conn\n        self.addr = addr\n        self.parser = JT808Parser()\n        self.device_id = None\n        self.authenticated = False\n        self.video_request_sent = False  # Track if video request already sent\n        self.video_request_attempts = []  # Track video request attempts with different params",
         "detail": "server",
         "documentation": {}
     },
