@@ -445,6 +445,13 @@ class JT808Parser:
         """
         Build video list query (0x9205)
         
+        JTT1078 Protocol Format (Message Body):
+        - Byte 0: Channel number (1 byte, 0xFF = all channels)
+        - Byte 1: Video type (1 byte, 0xFF = all types)
+        - Bytes 2-7: Start time (6 bytes BCD: YYMMDDHHmmss, 0xFF... = no limit)
+        - Bytes 8-13: End time (6 bytes BCD: YYMMDDHHmmss, 0xFF... = no limit)
+        Total: 14 bytes
+        
         Args:
             phone: Device phone number
             msg_seq: Message sequence number
@@ -453,21 +460,61 @@ class JT808Parser:
             start_time: Start time (BCD format: YYMMDDHHmmss, None = no limit)
             end_time: End time (BCD format: YYMMDDHHmmss, None = no limit)
         """
-        body = struct.pack('>B', channel)  # Channel number
-        body += struct.pack('>B', video_type)  # Video type
+        import binascii
         
-        # Time range (optional, 6 bytes each)
+        print(f"[PROTOCOL 0x9205] Building video list query for device {phone}")
+        print(f"[PROTOCOL 0x9205] Parameters: channel={channel} (0x{channel:02X}), video_type={video_type} (0x{video_type:02X})")
+        
+        body = bytearray()
+        
+        # Byte 0: Channel number
+        body.extend(struct.pack('>B', channel))
+        if channel == 0xFF:
+            print(f"[PROTOCOL 0x9205] Field 0: Channel = 0xFF (All channels)")
+        else:
+            print(f"[PROTOCOL 0x9205] Field 0: Channel = {channel} (0x{channel:02X})")
+        
+        # Byte 1: Video type
+        body.extend(struct.pack('>B', video_type))
+        if video_type == 0xFF:
+            print(f"[PROTOCOL 0x9205] Field 1: Video type = 0xFF (All types)")
+        else:
+            print(f"[PROTOCOL 0x9205] Field 1: Video type = {video_type} (0x{video_type:02X})")
+        
+        # Bytes 2-7: Start time (6 bytes BCD or 0xFF... for no limit)
         if start_time:
-            body += start_time
+            if isinstance(start_time, str) and len(start_time) == 12:
+                # Convert YYMMDDHHmmss string to BCD bytes
+                start_time_bytes = bytes([int(start_time[i]) * 16 + int(start_time[i+1]) for i in range(0, 12, 2)])
+            else:
+                start_time_bytes = start_time[:6] if len(start_time) >= 6 else start_time + b'\xFF' * (6 - len(start_time))
+            body.extend(start_time_bytes)
+            print(f"[PROTOCOL 0x9205] Field 2: Start time = {binascii.hexlify(start_time_bytes).decode()}")
         else:
-            body += b'\xFF' * 6  # No start time limit
+            body.extend(b'\xFF' * 6)  # No start time limit
+            print(f"[PROTOCOL 0x9205] Field 2: Start time = 0xFFFFFFFFFFFF (No limit)")
         
+        # Bytes 8-13: End time (6 bytes BCD or 0xFF... for no limit)
         if end_time:
-            body += end_time
+            if isinstance(end_time, str) and len(end_time) == 12:
+                # Convert YYMMDDHHmmss string to BCD bytes
+                end_time_bytes = bytes([int(end_time[i]) * 16 + int(end_time[i+1]) for i in range(0, 12, 2)])
+            else:
+                end_time_bytes = end_time[:6] if len(end_time) >= 6 else end_time + b'\xFF' * (6 - len(end_time))
+            body.extend(end_time_bytes)
+            print(f"[PROTOCOL 0x9205] Field 3: End time = {binascii.hexlify(end_time_bytes).decode()}")
         else:
-            body += b'\xFF' * 6  # No end time limit
+            body.extend(b'\xFF' * 6)  # No end time limit
+            print(f"[PROTOCOL 0x9205] Field 3: End time = 0xFFFFFFFFFFFF (No limit)")
         
-        return self.build_response(MSG_ID_VIDEO_LIST_QUERY, phone, msg_seq, body)
+        # Log complete body structure
+        body_bytes = bytes(body)
+        print(f"[PROTOCOL 0x9205] Complete body: {len(body_bytes)} bytes, hex: {binascii.hexlify(body_bytes).decode()}")
+        print(f"[PROTOCOL 0x9205] Body structure: [Channel(1)][VideoType(1)][StartTime(6)][EndTime(6)] = 14 bytes")
+        
+        message = self.build_response(MSG_ID_VIDEO_LIST_QUERY, phone, msg_seq, body_bytes)
+        print(f"[PROTOCOL 0x9205] Complete message built: {len(message)} bytes")
+        return message
     
     def build_video_download_request(self, phone, msg_seq, channel, start_time, end_time, 
                                      alarm_type=0, video_type=0, storage_type=0):
@@ -631,39 +678,79 @@ class JT808Parser:
         
         JTT1078 Protocol Format (Message Body):
         - Bytes 0-1: Video count (2 bytes, big-endian)
-        - For each video (18 bytes):
-          - Byte 0: Channel number (1 byte)
-          - Bytes 1-6: Start time (6 bytes BCD: YYMMDDHHmmss)
-          - Bytes 7-12: End time (6 bytes BCD: YYMMDDHHmmss)
-          - Bytes 13-16: Alarm type (4 bytes, big-endian)
-          - Byte 17: Video type (1 byte)
-          - Bytes 18-21: File size (4 bytes, big-endian) - wait, that's 22 bytes per video
-        Actually, per JTT1078 standard:
-        - Video count: 2 bytes
-        - Each video entry: 18 bytes
-          - Channel: 1 byte
-          - Start time: 6 bytes BCD
-          - End time: 6 bytes BCD
-          - Alarm type: 4 bytes
-          - Video type: 1 byte
-        Total per video: 18 bytes
+        - For each video entry:
+          Format 1 (18 bytes - standard):
+            - Byte 0: Channel number (1 byte)
+            - Bytes 1-6: Start time (6 bytes BCD: YYMMDDHHmmss)
+            - Bytes 7-12: End time (6 bytes BCD: YYMMDDHHmmss)
+            - Bytes 13-16: Alarm type (4 bytes, big-endian)
+            - Byte 17: Video type (1 byte)
+          Format 2 (22 bytes - with file size):
+            - Same as Format 1, plus:
+            - Bytes 18-21: File size (4 bytes, big-endian)
         
-        Returns: List of video dictionaries or None if parsing fails
+        Returns: Dictionary with 'video_count' and 'videos' list, or None if parsing fails
         """
         if len(body) < 2:
+            print(f"[PROTOCOL] Video list response too short: {len(body)} bytes (minimum 2)")
             return None
         
         try:
             # Parse video count
             video_count = struct.unpack('>H', body[0:2])[0]
+            print(f"[PROTOCOL] Parsing video list response: count={video_count}, body_size={len(body)} bytes")
             
-            # Each video entry is 18 bytes
+            if video_count == 0:
+                print(f"[PROTOCOL] Video list is empty (0 videos)")
+                return {
+                    'video_count': 0,
+                    'videos': []
+                }
+            
+            # Determine entry size by checking body length
+            # Expected sizes:
+            # - 18-byte format: 2 + (video_count * 18)
+            # - 22-byte format: 2 + (video_count * 22)
+            expected_size_18 = 2 + (video_count * 18)
+            expected_size_22 = 2 + (video_count * 22)
+            
+            entry_size = 18  # Default to 18 bytes
+            has_file_size = False
+            
+            # Determine format based on body size (with tolerance)
+            if abs(len(body) - expected_size_22) < abs(len(body) - expected_size_18):
+                if abs(len(body) - expected_size_22) <= 10:  # Allow 10 bytes tolerance
+                    entry_size = 22
+                    has_file_size = True
+                    print(f"[PROTOCOL] Detected 22-byte format (with file size)")
+            elif abs(len(body) - expected_size_18) <= 10:
+                entry_size = 18
+                has_file_size = False
+                print(f"[PROTOCOL] Detected 18-byte format (standard)")
+            else:
+                # Try to determine from first entry
+                if len(body) >= 2 + 22:
+                    # Check if bytes 18-21 look like a file size (reasonable range: 0 to 10GB)
+                    file_size_test = struct.unpack('>I', body[2+18:2+22])[0]
+                    if file_size_test < 10 * 1024 * 1024 * 1024:  # Less than 10GB
+                        entry_size = 22
+                        has_file_size = True
+                        print(f"[PROTOCOL] Detected 22-byte format based on file size field")
+                    else:
+                        entry_size = 18
+                        print(f"[PROTOCOL] Using 18-byte format (file size field looks invalid)")
+                else:
+                    entry_size = 18
+                    print(f"[PROTOCOL] Using 18-byte format (default, body too short to determine)")
+            
+            # Parse video entries
             videos = []
             offset = 2
             
             for i in range(video_count):
-                if offset + 18 > len(body):
+                if offset + entry_size > len(body):
                     print(f"[PROTOCOL] Warning: Incomplete video list, expected {video_count} videos but only {len(videos)} complete")
+                    print(f"[PROTOCOL]   Remaining bytes: {len(body) - offset}, need {entry_size} for entry {i+1}")
                     break
                 
                 # Parse video entry
@@ -683,24 +770,44 @@ class JT808Parser:
                 # Parse video type
                 video_type = struct.unpack('>B', body[offset+17:offset+18])[0]
                 
-                videos.append({
+                video_entry = {
                     'channel': channel,
                     'start_time': start_time_str,
                     'end_time': end_time_str,
                     'alarm_type': alarm_type,
                     'video_type': video_type,
                     'index': i
-                })
+                }
                 
-                offset += 18
+                # Parse file size if present (22-byte format)
+                if has_file_size and offset + 22 <= len(body):
+                    file_size = struct.unpack('>I', body[offset+18:offset+22])[0]
+                    video_entry['file_size'] = file_size
+                    print(f"[PROTOCOL]   Video {i}: Channel={channel}, Time={start_time_str} to {end_time_str}, "
+                          f"Alarm=0x{alarm_type:08X}, Type={video_type}, Size={file_size} bytes")
+                else:
+                    print(f"[PROTOCOL]   Video {i}: Channel={channel}, Time={start_time_str} to {end_time_str}, "
+                          f"Alarm=0x{alarm_type:08X}, Type={video_type}")
+                
+                videos.append(video_entry)
+                offset += entry_size
             
-            print(f"[PROTOCOL] Parsed video list: {len(videos)} videos")
+            print(f"[PROTOCOL] ✓ Successfully parsed video list: {len(videos)} videos (entry_size={entry_size} bytes)")
             return {
                 'video_count': len(videos),
-                'videos': videos
+                'videos': videos,
+                'entry_size': entry_size,
+                'has_file_size': has_file_size
             }
         except Exception as e:
             print(f"[ERROR] Failed to parse video list response: {e}")
+            print(f"[ERROR] Body size: {len(body)} bytes")
+            if len(body) >= 2:
+                try:
+                    count = struct.unpack('>H', body[0:2])[0]
+                    print(f"[ERROR] Video count field: {count}")
+                except:
+                    pass
             import traceback
             traceback.print_exc()
             return None

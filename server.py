@@ -65,9 +65,24 @@ class DeviceHandler:
         msg_id = msg['msg_id']
         phone = msg['phone']
         msg_seq = msg['msg_seq']
-        body = msg['body']
+        body = msg.get('body', b'')
         
         self.message_count += 1
+        
+        # Log all 0x1205 messages for video list debugging
+        if msg_id == MSG_ID_VIDEO_UPLOAD:
+            print(f"[MSG 0x1205] Received 0x1205 message from {phone}, body_size={len(body)} bytes, seq={msg_seq}")
+            if len(body) > 0:
+                # Show first few bytes as hex for debugging
+                preview = binascii.hexlify(body[:min(20, len(body))]).decode()
+                print(f"[MSG 0x1205] Body preview (first 20 bytes): {preview}")
+                if len(body) >= 2:
+                    # Try to interpret first 2 bytes as video count
+                    try:
+                        potential_count = struct.unpack('>H', body[0:2])[0]
+                        print(f"[MSG 0x1205] First 2 bytes as uint16: {potential_count} (could be video count if < 1000)")
+                    except:
+                        pass
         
         # Enhanced logging with hex dump for debugging
         print(f"[MSG #{self.message_count}] ID=0x{msg_id:04X}, Phone={phone}, Seq={msg_seq}, BodyLen={len(body)}")
@@ -240,6 +255,20 @@ class DeviceHandler:
             self.conn.send(response)
             print(f"[TX] Authentication response sent")
             
+            # Automatically query video list after successful authentication
+            if not was_authenticated:
+                print(f"[AUTO QUERY] Device {phone} authenticated, automatically querying video list...")
+                # Wait a short moment for device to be ready, then query
+                def auto_query_video_list():
+                    time.sleep(1.0)  # Wait 1 second for device to be ready
+                    if self.conn and self.authenticated:
+                        print(f"[AUTO QUERY] Sending automatic video list query to {phone}")
+                        self.query_video_list(phone, self.message_count)
+                    else:
+                        print(f"[AUTO QUERY] Connection lost or device not authenticated, skipping auto query")
+                
+                threading.Thread(target=auto_query_video_list, daemon=True).start()
+            
             # Try sending video request with multiple configurations
             if not was_authenticated and not self.video_request_sent:
                 # Try querying video list first, then request video
@@ -285,13 +314,55 @@ class DeviceHandler:
                 print(f"[LOCATION] Failed to parse location data from {phone}")
         
         # Handle video list response (0x1205 as response to 0x9205)
-        # Check if this is a video list response (small body, starts with video count)
-        elif msg_id == MSG_ID_VIDEO_UPLOAD and hasattr(self, '_video_list_query_sent') and self._video_list_query_sent:
-            # Try to parse as video list first (if body is small and starts with count)
-            if len(body) >= 2 and len(body) < 1000:  # Video list is typically small
+        # Try to detect video list response by structure, not just query flag
+        elif msg_id == MSG_ID_VIDEO_UPLOAD:
+            # Check if this could be a video list response
+            # Video list characteristics:
+            # 1. Small body size (typically < 1000 bytes, but can be larger with many videos)
+            # 2. Starts with 2-byte video count (big-endian)
+            # 3. Body length should be: 2 + (video_count * entry_size)
+            # 4. Entry size is typically 18 bytes (or 22 bytes with file size)
+            
+            is_potential_video_list = False
+            detection_reason = ""
+            
+            if len(body) >= 2:
+                # Check if body starts with a reasonable video count
+                try:
+                    video_count = struct.unpack('>H', body[0:2])[0]
+                    # Reasonable video count: 0 to 1000
+                    if 0 <= video_count <= 1000:
+                        # Check if body size matches expected format
+                        # Minimum: 2 bytes (count) + 0 videos = 2 bytes
+                        # Maximum reasonable: 2 + (1000 * 22) = 22002 bytes
+                        if len(body) >= 2:
+                            # Try 18-byte format first
+                            expected_size_18 = 2 + (video_count * 18)
+                            # Try 22-byte format (with file size)
+                            expected_size_22 = 2 + (video_count * 22)
+                            
+                            # Allow some tolerance (messages might have extra padding or be incomplete)
+                            if (abs(len(body) - expected_size_18) <= 10 or 
+                                abs(len(body) - expected_size_22) <= 10 or
+                                len(body) < 1000):  # Small messages are likely video lists
+                                is_potential_video_list = True
+                                detection_reason = f"Structure matches video list: count={video_count}, body_size={len(body)}, expected_18={expected_size_18}, expected_22={expected_size_22}"
+                except:
+                    pass
+            
+            # Also check if we sent a query (but don't require it)
+            query_was_sent = hasattr(self, '_video_list_query_sent') and self._video_list_query_sent
+            
+            if is_potential_video_list or (query_was_sent and len(body) < 1000):
+                print(f"[VIDEO LIST] Detected potential video list response from {phone}")
+                print(f"[VIDEO LIST]   Body size: {len(body)} bytes")
+                print(f"[VIDEO LIST]   Query was sent: {query_was_sent}")
+                print(f"[VIDEO LIST]   Detection reason: {detection_reason if is_potential_video_list else 'Query flag set and small body'}")
+                
+                # Try to parse as video list
                 video_list = self.parser.parse_video_list_response(body)
                 if video_list and 'videos' in video_list:
-                    print(f"[VIDEO LIST] Video list response received from {phone}: {video_list['video_count']} videos")
+                    print(f"[VIDEO LIST] ✓ Video list response successfully parsed from {phone}: {video_list['video_count']} videos")
                     self.stored_videos = video_list['videos']
                     self.video_list_received = True
                     
@@ -302,27 +373,31 @@ class DeviceHandler:
                               f"Alarm=0x{video['alarm_type']:08X}, Type={video['video_type']}")
                     
                     # Send response acknowledgment
-                    response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_LIST_QUERY, 0)
-                    self.conn.send(response)
-                    print(f"[TX] Video list response acknowledged")
+                    try:
+                        response = self.parser.build_terminal_response(phone, msg_seq, MSG_ID_VIDEO_LIST_QUERY, 0)
+                        self.conn.send(response)
+                        print(f"[TX] Video list response acknowledged")
+                    except Exception as e:
+                        print(f"[ERROR] Failed to send video list acknowledgment: {e}")
+                    
                     return
+                else:
+                    print(f"[VIDEO LIST] Parsing failed - not a valid video list response")
+                    if query_was_sent:
+                        print(f"[VIDEO LIST] Query was sent but response doesn't match video list format")
             
             # If not a video list, treat as regular video data
-            print(f"[VIDEO LIST] Received 0x1205 but not a video list, treating as video data")
+            if query_was_sent:
+                print(f"[VIDEO LIST] Received 0x1205 but not a video list (body_size={len(body)}), treating as video data")
             # Fall through to video upload handler
         
         # Handle video upload (0x1205) - JTT 1078 (stored video data)
         # This is actual video data being uploaded from device storage
+        # Note: Video list responses are handled above, so this should only be video data
         elif msg_id == MSG_ID_VIDEO_UPLOAD:
-            # Check if this is a video list (small body, starts with count) or video data (large body, starts with channel/data_type)
-            if len(body) >= 2 and len(body) < 100 and not hasattr(self, '_video_download_in_progress'):
-                # Might be a video list response
-                video_list = self.parser.parse_video_list_response(body)
-                if video_list and 'videos' in video_list:
-                    print(f"[VIDEO LIST] Video list received from {phone}: {video_list['video_count']} videos")
-                    self.stored_videos = video_list['videos']
-                    self.video_list_received = True
-                    return
+            # This should only be reached if the message wasn't identified as a video list above
+            # Log that we're treating this as video data
+            print(f"[STORED VIDEO] Processing 0x1205 as video data (not video list): body_size={len(body)} bytes")
             
             # This is stored video data upload
             print(f"[STORED VIDEO] Video data received from {phone} (0x1205)")
@@ -572,15 +647,45 @@ class DeviceHandler:
     def query_video_list(self, phone, msg_seq):
         """Query video list from device (0x9205)"""
         try:
-            if not self.conn:
-                return
+            print(f"[VIDEO LIST QUERY] Starting video list query for device {phone}, msg_seq={msg_seq}")
             
+            if not self.conn:
+                print(f"[VIDEO LIST QUERY] ERROR: No connection available for device {phone}")
+                return False
+            
+            # Check if connection is still active
+            try:
+                # Try to get socket info to verify connection
+                self.conn.getpeername()
+            except (OSError, AttributeError) as e:
+                print(f"[VIDEO LIST QUERY] ERROR: Connection lost for device {phone}: {e}")
+                return False
+            
+            print(f"[VIDEO LIST QUERY] Building query message...")
             video_list_query = self.parser.build_video_list_query(phone, msg_seq + 1)
+            
+            if not video_list_query:
+                print(f"[VIDEO LIST QUERY] ERROR: Failed to build query message")
+                return False
+            
+            # Log hex dump of the message
+            hex_dump = binascii.hexlify(video_list_query).decode()
+            formatted_hex = ' '.join([hex_dump[i:i+2] for i in range(0, min(len(hex_dump), 100), 2)])
+            print(f"[VIDEO LIST QUERY] Sending query message ({len(video_list_query)} bytes)")
+            print(f"[VIDEO LIST QUERY] Message hex (first 100 bytes): {formatted_hex}{'...' if len(hex_dump) > 100 else ''}")
+            
             self.conn.send(video_list_query)
             self._video_list_query_sent = True
-            print(f"[TX] Video list query (0x9205) sent to {phone}")
+            self._video_list_query_time = time.time()
+            
+            print(f"[TX] Video list query (0x9205) sent to {phone}, message size: {len(video_list_query)} bytes")
+            print(f"[VIDEO LIST QUERY] Query sent successfully, waiting for response...")
+            return True
         except Exception as e:
-            print(f"[ERROR] Failed to send video list query: {e}")
+            print(f"[ERROR] Failed to send video list query to {phone}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def request_video_download(self, phone, msg_seq, video_info):
         """
